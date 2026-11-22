@@ -1,4 +1,10 @@
-import { createAutopilot, createMemoryFlags, createMemoryNotifier, createMemoryStore, standardPlan } from "open-rollout";
+import {
+  createAutopilot,
+  createMemoryFlags,
+  createMemoryNotifier,
+  createMemoryStore,
+  standardPlan,
+} from "open-rollout";
 import { simulatedTraffic } from "./simulated-traffic";
 
 const flags = createMemoryFlags();
@@ -14,7 +20,9 @@ const autopilot = createAutopilot({ flags, metrics: traffic, notifier, store: cr
 const plan = standardPlan({
   flagKey: "new-checkout",
   risk: "low",
-  guardrails: [{ metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" }],
+  guardrails: [
+    { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" },
+  ],
 });
 await autopilot.start({ id: "checkout-1", plan, now: traffic.now() });
 

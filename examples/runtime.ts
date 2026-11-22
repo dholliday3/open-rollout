@@ -3,7 +3,9 @@ import { rolloutTools } from "open-rollout";
 
 async function tickRollouts(autopilot: Autopilot): Promise<void> {
   const results = await autopilot.tickAll(Date.now());
-  const problems = results.filter((result) => result.status === "failed").flatMap((result) => result.problems);
+  const problems = results
+    .filter((result) => result.status === "failed")
+    .flatMap((result) => result.problems);
   if (problems.length > 0) {
     throw new Error(problems.join(" "));
   }

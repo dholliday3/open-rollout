@@ -20,7 +20,13 @@ your flag provider, metrics and job runner, with its state in a store you own. I
 feature flags and product analytics and want automatic rollback without changing vendors.
 
 ```ts
-import { createAutopilot, createMemoryFlags, createMemoryNotifier, createMemoryStore, standardPlan } from "open-rollout";
+import {
+  createAutopilot,
+  createMemoryFlags,
+  createMemoryNotifier,
+  createMemoryStore,
+  standardPlan,
+} from "open-rollout";
 import { simulatedTraffic } from "./simulated-traffic";
 
 const flags = createMemoryFlags();
@@ -36,7 +42,9 @@ const autopilot = createAutopilot({ flags, metrics: traffic, notifier, store: cr
 const plan = standardPlan({
   flagKey: "new-checkout",
   risk: "low",
-  guardrails: [{ metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" }],
+  guardrails: [
+    { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" },
+  ],
 });
 await autopilot.start({ id: "checkout-1", plan, now: traffic.now() });
 
@@ -60,8 +68,8 @@ released: Released: the flag is on for everybody.
 
 That is [`examples/quickstart.ts`](examples/quickstart.ts) (`pnpm quickstart`). The in-memory adapters
 stand in for a flag provider, and [`simulated-traffic.ts`](examples/simulated-traffic.ts) for analytics: an
-hour of traffic at 1,000 people a minute, in under a second. Give the new arm an error rate of 0.10 and the rollout is
-rolled back three minutes in, at 10%. [`quickstart.test.ts`](examples/quickstart.test.ts) checks both.
+hour of traffic at 1,000 people a minute, in under a second. Give the new arm an error rate of 0.10 and
+the rollout is rolled back three minutes in, at 10%. [`quickstart.test.ts`](examples/quickstart.test.ts) checks both.
 
 ## Status
 
@@ -144,7 +152,9 @@ runtime's schedule, or a workflow that ticks one rollout and sleeps. Call this e
 ```ts
 async function tickRollouts(autopilot: Autopilot): Promise<void> {
   const results = await autopilot.tickAll(Date.now());
-  const problems = results.filter((result) => result.status === "failed").flatMap((result) => result.problems);
+  const problems = results
+    .filter((result) => result.status === "failed")
+    .flatMap((result) => result.problems);
   if (problems.length > 0) {
     throw new Error(problems.join(" "));
   }
@@ -238,8 +248,8 @@ of 50%, a sequential test on new minus old, and a sample ratio check. The differ
 
 - It is a library. The flags, metrics, store and scheduler are yours; changing flag provider means writing
   one adapter.
-- On too little data, the standard plans pause and ask a person. The hosted product rolls back, which on a
-  quiet night would undo every rollout.
+- On too little data, the standard plans pause and ask a person. LaunchDarkly rolls back a step that never
+  reaches its minimum sample.
 - It does not propose flags from pull requests, remove finished flags, or hand a regression to an agent to
   fix. `rollout_status` returns each guardrail's reading, which is where such an agent would start.
 
