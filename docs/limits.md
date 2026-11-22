@@ -48,7 +48,10 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
 - **Quiet products.** A step needs `minFreshUnits` new units per arm within `maxDurationMs`. The standard
   medium plan needs about 85 new units a minute across the product; below that its rollouts pause for too
   little data. `standardPlan({ overrides: { everyStep: { minFreshUnits, minDurationMs } } })` asks for
-  fewer units over longer steps.
+  fewer units over longer steps. Counting accounts rather than people (`unit: { groupTypeIndex }` on the
+  PostHog source) makes this much sharper: a B2B product may gain a few accounts a day. Give such a plan
+  a `minFreshUnits` and `limits.minUnitsToJudge` it can reach and steps measured in days, and expect only
+  large regressions to be caught, because tens of accounts an arm leave the interval wide.
 - **Metrics that arrive late.** A step passes only once the metric source's data covers its whole watch,
   so a source an hour behind (a warehouse loaded hourly) adds an hour to every step, and a regression is
   seen an hour after it starts. `standardPlan({ sourceLagMs })` gives the staleness limit and every step's

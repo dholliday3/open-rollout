@@ -14,6 +14,7 @@ const OK = 200,
   NOW_SECONDS = 1_795_000_000,
   /** PostHog's clock when the caller's is half a minute fast. */
   SLOWER_SECONDS = 1_794_999_970,
+  GROUP_TYPES = 5,
   OPTIONS = { ingestionLagMs: 60_000, metrics: { errors: { denominatorEvent: "request", event: "$exception" } }, now: (): number => NOW, projectId: 1 },
   QUERY: MetricQuery = { flagKey: "new-checkout", guardrails: [{ direction: "lower_is_better", kind: "ratio", metric: "errors", onRegression: "rollback", tolerance: 0 }], since: SINCE },
   ROWS = [
@@ -60,6 +61,31 @@ describe("the PostHog metric source", () => {
     expect.hasAssertions();
     const metrics = createPostHogMetrics({ ...OPTIONS, transport: answering([NOW_SECONDS, QUIET_SINCE_SECONDS, 1, 1]) });
     await expect(metrics.snapshot(QUERY)).resolves.toMatchObject({ asOf: NOW_SECONDS * MS_PER_SECOND, watermark: QUIET_SINCE_SECONDS * MS_PER_SECOND });
+  });
+});
+
+describe("the PostHog metric source's unit", () => {
+  it("counts people by default, in who was exposed and in what they did", () => {
+    expect.hasAssertions();
+    const { query } = snapshotQuery({ ...OPTIONS, transport: unused }, QUERY, NOW - LAG);
+    expect(query.match(/person_id AS unit/g)).toHaveLength(2);
+    expect(query).not.toContain("$group_");
+  });
+
+  it("counts a PostHog group instead when given its type index, leaving out events sent without one", () => {
+    expect.hasAssertions();
+    const { query } = snapshotQuery({ ...OPTIONS, transport: unused, unit: { groupTypeIndex: 2 } }, QUERY, NOW - LAG);
+    expect(query.match(/\$group_2 AS unit/g)).toHaveLength(2);
+    expect(query.match(/AND \$group_2 != ''/g)).toHaveLength(2);
+    expect(query).not.toContain("person_id");
+  });
+
+  it("refuses at once a group type index PostHog doesn't have, which would go into the query's text", () => {
+    expect.hasAssertions();
+    const invalid = [-1, GROUP_TYPES, GROUP_TYPES / 2, Number.NaN];
+    for (const groupTypeIndex of invalid) {
+      expect(() => createPostHogMetrics({ ...OPTIONS, transport: unused, unit: { groupTypeIndex } })).toThrow("A PostHog group type index is a whole number from 0 to 4");
+    }
   });
 });
 

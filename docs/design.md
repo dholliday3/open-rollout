@@ -47,6 +47,7 @@ PostHog is the first provider with an adapter. It needs a multivariate flag with
 - PostHog hashes "is this person in" and "which variant" separately, so raising the percentage keeps everyone who was in and never moves anyone between variants.
 - Server SDKs poll flag definitions every 30 seconds by default. `limits.propagationMs` (60 seconds) is that, doubled.
 - Exposure is the `$feature_flag_called` event (`$feature_flag`, `$feature_flag_response`). The metric source is one HogQL query; it and its freshness query were run against a live PostHog project on 2026-11-21 and parse.
+- The unit is a person (`person_id`), or with `unit: { groupTypeIndex }` a group such as a B2B account: the events' `$group_0` to `$group_4`, leaving out events sent without that group. The group form of the query was run against a live project on 2026-11-22 and parses.
 - These facts come from the descriptions of PostHog's own MCP server tools, read on 2026-11-21.
 
 ## What LaunchDarkly publishes, and what it doesn't

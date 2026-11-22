@@ -31,6 +31,13 @@ interface PostHogMetricsOptions {
   /** Each guardrail's metric name, and the events behind it. */
   readonly metrics: Readonly<Record<string, MetricDefinition>>;
   readonly variants?: { readonly control: string; readonly treatment: string };
+  /**
+   * What is counted as one unit: a person (the default), or a PostHog group such as the company behind a
+   * B2B account, by its group type index (the events' `$group_0` to `$group_4`). Events without that group
+   * are left out. A product with few accounts has few units, so plan with fewer `minFreshUnits` and longer
+   * steps (`standardPlan`'s `overrides`).
+   */
+  readonly unit?: "person" | { readonly groupTypeIndex: number } | undefined;
 }
 
 interface HogQuery {
@@ -45,6 +52,8 @@ const cell = z.unknown(),
   DEFAULT_VARIANTS = { control: "control", treatment: "treatment" },
   /** Units seen on both arms are counted under this name and left out of both. */
   BOTH = "both",
+  /** PostHog keeps five group types, `$group_0` to `$group_4`. */
+  GROUP_TYPES = 5,
   MS_PER_SECOND = 1000,
   PROPERTY_NAME = /^[\w$]+$/,
   NO_SAMPLE: ArmSample = { denominator: { crossSum: 0, sum: 0, sumSquares: 0 }, sum: 0, sumSquares: 0, units: 0 };
@@ -55,6 +64,18 @@ function definitionOf(options: PostHogMetricsOptions, guardrail: Guardrail): Met
     throw new Error(`The metric ${guardrail.metric} has no usable PostHog definition.`);
   }
   return definition;
+}
+
+/** The events' column that names the unit. It goes into the query's text, so a group type index must be one PostHog has. */
+function unitColumn(options: PostHogMetricsOptions): string {
+  const unit = options.unit ?? "person";
+  if (unit === "person") {
+    return "person_id";
+  }
+  if (!Number.isInteger(unit.groupTypeIndex) || unit.groupTypeIndex < 0 || unit.groupTypeIndex >= GROUP_TYPES) {
+    throw new Error(`A PostHog group type index is a whole number from 0 to ${GROUP_TYPES - 1}; got ${unit.groupTypeIndex}.`);
+  }
+  return `$group_${unit.groupTypeIndex}`;
 }
 
 /** One unit's value for a guardrail, counting only what the unit did after it was first exposed. */
@@ -89,17 +110,20 @@ function valuesFor(options: PostHogMetricsOptions, query: MetricQuery, until: nu
 }
 
 /**
- * One query for every guardrail: who was first exposed on which arm, then what each of them did after that,
- * then totals per arm. A person is the unit, so a person with many events counts once.
+ * One query for every guardrail: which unit was first exposed on which arm, then what each of them did after
+ * that, then totals per arm. A unit (a person, or a group) with many events counts once.
  */
 function snapshotQuery(options: PostHogMetricsOptions, query: MetricQuery, until: number): HogQuery {
-  const definitions = query.guardrails.map((guardrail) => definitionOf(options, guardrail)),
+  const unit = unitColumn(options),
+    // A group's column is empty on events sent without that group, which belong to no unit.
+    grouped = unit === "person_id" ? "" : ` AND ${unit} != ''`,
+    definitions = query.guardrails.map((guardrail) => definitionOf(options, guardrail)),
     valueColumns = definitions.map((definition, index) => `toFloat(properties.${definition.property ?? "$value"}) AS value${index}`),
     perUnit = query.guardrails.flatMap((guardrail, index) => unitColumns(guardrail, definitionOf(options, guardrail), index)),
     perArm = query.guardrails.flatMap((_guardrail, index) => armColumns(index)),
     window = `timestamp >= toDateTime({since}) AND timestamp <= toDateTime({until})`,
-    exposures = `SELECT person_id AS unit, argMin(properties.$feature_flag_response, timestamp) AS first_arm, min(timestamp) AS first_seen, uniqExact(properties.$feature_flag_response) AS arms FROM events WHERE event = '$feature_flag_called' AND properties.$feature_flag = {flag} AND properties.$feature_flag_response IN {arms} AND ${window} GROUP BY unit`,
-    activity = `SELECT ${["person_id AS unit", "event", "timestamp", ...valueColumns].join(", ")} FROM events WHERE event IN {events} AND ${window}`,
+    exposures = `SELECT ${unit} AS unit, argMin(properties.$feature_flag_response, timestamp) AS first_arm, min(timestamp) AS first_seen, uniqExact(properties.$feature_flag_response) AS arms FROM events WHERE event = '$feature_flag_called' AND properties.$feature_flag = {flag} AND properties.$feature_flag_response IN {arms} AND ${window}${grouped} GROUP BY unit`,
+    activity = `SELECT ${[`${unit} AS unit`, "event", "timestamp", ...valueColumns].join(", ")} FROM events WHERE event IN {events} AND ${window}${grouped}`,
     units = `SELECT ${["exposure.unit AS unit", `if(any(exposure.arms) > 1, '${BOTH}', any(exposure.first_arm)) AS arm`, ...perUnit].join(", ")} FROM (${exposures}) AS exposure LEFT JOIN (${activity}) AS activity ON activity.unit = exposure.unit GROUP BY unit`;
   return { query: `SELECT ${["arm", "count() AS units", ...perArm].join(", ")} FROM (${units}) GROUP BY arm`, values: valuesFor(options, query, until) };
 }
@@ -180,8 +204,12 @@ function unseen(events: readonly string[], latest: Row | undefined): string[] {
   return events.filter((_event, index) => numberAt(latest, `seen${index}`) === 0);
 }
 
-/** A `MetricSource` over PostHog events: exposures are `$feature_flag_called`, and each metric is the events its definition names. */
+/**
+ * A `MetricSource` over PostHog events: exposures are `$feature_flag_called`, and each metric is the events its
+ * definition names. Throws at once on a `unit` PostHog doesn't have.
+ */
 function createPostHogMetrics(options: PostHogMetricsOptions): MetricSource {
+  unitColumn(options);
   return {
     snapshot: async (query) => {
       const until = options.now() - options.ingestionLagMs,
