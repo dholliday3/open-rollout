@@ -1,0 +1,70 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Every oxlint rule, type-aware included. A rule is off only when it contradicts another rule or
+  // its fixes cost more than they give.
+  "options": { "typeAware": true },
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "jsdoc", "promise", "node", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "style": "error",
+    "pedantic": "error",
+    "restriction": "error",
+    "nursery": "error"
+  },
+  "rules": {
+    // ES5-compat bans; they contradict prefer-optional-chain and require-await.
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    // Named exports win; these two contradict import/no-default-export.
+    "import/no-named-export": "off",
+    "import/prefer-default-export": "off",
+    "unicorn/no-null": "off",
+    // unicorn/no-typeof-undefined asks for `x === undefined`, which this would ban.
+    "no-undefined": "off",
+    // With no-use-before-define, sorted declarators would have to follow the alphabet, not what they read.
+    "sort-vars": "off",
+    // Style rules whose fixes read worse and catch no bug.
+    "one-var": "off",
+    "no-ternary": "off",
+    "sort-keys": "off",
+    "jsdoc/require-param": "off",
+    "jsdoc/require-returns": "off",
+    "typescript/explicit-function-return-type": "off",
+    "func-style": "off",
+    "id-length": "off",
+    "import/no-relative-parent-imports": "off",
+    "vitest/max-expects": "off",
+    "unicorn/no-await-expression-member": "off",
+    "typescript/explicit-member-accessibility": "off",
+    "require-unicode-regexp": "off",
+    "no-inline-comments": "off",
+    "import/no-namespace": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    // TypeScript checks undefined names.
+    "eslint/no-undef": "off",
+    "unicorn/prefer-ternary": "off",
+    // Pairs that contradict each other; the stricter side stays on.
+    "vitest/no-importing-vitest-globals": "off",
+    "vitest/prefer-to-be-truthy": "off",
+    "vitest/prefer-to-be-falsy": "off",
+    "vitest/prefer-called-times": "off",
+    "vitest/no-hooks": "off",
+    "unicorn/prefer-top-level-await": "off",
+    "no-void": ["error", { "allowAsStatement": true }],
+    "no-magic-numbers": ["error", { "ignore": [-1, 0, 1, 2] }],
+    "no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
+    "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
+    "vitest/valid-title": ["error", { "ignoreTypeOfDescribeName": true }]
+  },
+  "overrides": [
+    {
+      // Vitest and Stryker load a config file's default export.
+      "files": ["*.config.{ts,mjs}"],
+      "rules": { "import/no-default-export": "off", "node/no-process-env": "off" }
+    }
+  ],
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "coverage/**", "reports/**", ".stryker-tmp/**"]
+}

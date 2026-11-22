@@ -1,0 +1,40 @@
+{
+  "name": "open-rollout",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Guarded, self-driving feature flag rollouts: a pure decision core, ports for any flag provider and metric source, and bindings for durable agent runtimes.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "sim": "SIM_RUNS=400 SIM_CHAOS_RUNS=1000 vitest run src/sim",
+    "mutate": "stryker run"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^22.20.5",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "^7.0.2",
+    "vitest": "^4.0.17"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac"
+}

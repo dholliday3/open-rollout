@@ -1,0 +1,67 @@
+# open-rollout: guarded flag rollouts as a library
+
+open-rollout rolls a feature flag out in steps, watches guardrail metrics, and undoes the rollout when the new behaviour is worse. It is an open take on LaunchDarkly's Release Autopilot (guarded rollouts, auto-rollback, approvals, releases across environments) that runs on any flag provider and inside any durable runtime. The `README.md` has the contract and the code examples. This page has why it is shaped the way it is.
+
+Nothing in production uses it yet, and no PostHog flag has been written by it.
+
+## The decisions
+
+- **A rollout is a record in a store, not a workflow run.** A tick loads the record, looks at the flag and the metrics once, runs a pure function (`decide`), saves with compare-and-set, and only then writes the flag.
+  - Why not one long workflow with `sleep` between steps: a rollout lasts hours, and on a self-hosted durable runtime an upgrade can strand open runs. A durable runtime also gives at-least-once steps, never exactly-once, so a flag write can always happen twice or late.
+  - So every write sets the flag's whole state (never an increment), only the worker whose save won may write, and the next tick repairs whatever is wrong. A tick can be late, repeated, run twice at once or cut off anywhere.
+  - The same record can be driven by a runtime's schedule, a workflow loop, BullMQ or cron, or by two of them at once.
+- **Equal treatment and control shares at every step** (10% each, then 50% each, then everybody). This is LaunchDarkly's rule, and the reason is time: with 1% against 99% early and 50% against 50% later, a bad hour that hits everyone lands unevenly on the two arms and reads as a regression. Equal shares also mean the arms should always be the same size, which is what the sample ratio check tests. It costs a multivariate flag and caps a measured step at half.
+- **A confidence sequence, not a fixed-sample test.** A rollout looks at its metrics every tick. A t-test asked a thousand times cries wolf; a normal-mixture confidence sequence (Howard et al. 2021, Waudby-Smith et al. 2024) holds its error rate over every look at once. LaunchDarkly moved guarded rollouts from a Bayesian model to this family in January 2026 for the same reason. Each guardrail gets an equal part of the plan's error rate.
+- **People are the unit, not rows.** Errors per request, split by person, is a `ratio` metric with a delta-method variance. Counting each request as a unit overstates the evidence, because one person's requests fail together; `src/stats.test.ts` shows that version crying wolf on the same data.
+- **Evidence is counted on the metric source's clock, and the workers' clock has to agree.** A step moves on when the metrics' watermark covers the step's watch, the step has been in force that long by the workers' clock too, and each arm has gained new units during it. Wall-clock time alone would walk a rollout to 100% overnight with nobody on the site. Either clock alone can be wrong or be put right in the middle of a step.
+- **No answer is never good news.** A failed read, stale metrics, a missing metric, a NaN or a guardrail too thin to read all hold the rollout. The first version let a garbage snapshot through as healthy.
+- **More exposure than the record says is never left standing; less is a person's call.** Someone lowering the flag by hand pauses the rollout and is left alone. Anything raising it (a stalled worker's late write, a person) is brought back down, including for `settleMs` after a rollback.
+- **An approval is a command on the record, not a parked turn.** A rollout that needs a yes sits in `awaiting_approval` while the conversation carries on. An agent's draft never holds the conversation, and neither does a rollout.
+
+## What attacking it found
+
+A separate agent, given none of the implementation's reasoning, built a simulated production in `src/sim` and attacked the README's claims over three rounds: people with heavy-tailed activity who come back, a PostHog-like provider with polling evaluators and stale reads, an event pipeline with lag and loss, workers that interleave, stall and crash at every port call, and people at the provider's console. Its oracle checks what was really served, not the record. The first version failed 20 of its tests. What that taught, for whoever builds the next thing like this:
+
+- **An approval is permission, not evidence.** The first version released the moment a yes arrived, with the metrics down or already failing. A gate now opens on the next tick, and only if the evidence still holds.
+- **"My write hasn't landed" and "a person changed it back" look the same on the next read.** They need opposite answers: send it again, or leave it alone. The first fix was a pile of bookkeeping (a revision history, an acknowledged flag, two timers). The second round's criticism was to delete it: make the flag's revision an ordered number and have a write return the revision it left. Then a flag still at the revision it had when the write was sent hasn't taken the write, and a flag that has moved on and doesn't serve the step was changed by someone else.
+- **One read is not the truth.** A read answered from a replica that is behind paused rollouts and blamed a person. With ordered revisions, a reading below one already seen is simply ignored.
+- **Whose clock is it?** A step's watch was measured from a worker's clock to the metrics' watermark, so a stalled tick, a slow clock or shrinking lag shortened it. A snapshot now carries the source's own time, the watch runs between two times on that one clock, and a tick reads the flag before the metrics. Round three then put the source's clock right in the middle of a step, which shortened the watch again. The watch now has to be complete on both clocks, each measured against itself.
+- **A rule with no way back is a trap.** "A reading below a revision already seen is behind, so ignore it" froze a rollout for good the first time the number came down: a flag deleted and made again, or one write answered with a number too high. Nothing was reported. A flag that reads behind for five minutes is now taken as it reads, with an event. Any rule that says "ignore this" needs a limit on how long.
+- **One edit is not two.** A write that failed, then someone editing the flag's description, read as a person lowering the flag. The opposite fix (send again whenever the shares are unchanged) wrote over a kill switch: the write had landed, its answer was lost, and a person had turned the flag off. The rule that survives both: send again only when the flag is exactly one revision on with the shares it had. One edit can't be both our write and a person undoing it.
+- **The textbook ratio variance is wrong on real people.** Taken around each arm's own ratio, it called healthy code worse 10.6% of the time against a 5% budget, once a few returning people made most of the requests. Taken around the ratio both arms share, it is about 1%. My own test passed the broken version because its heavy users were a fixed tenth, not a few who dominate. The fix costs power: an outage takes about three times as long to catch on a ratio as on a rate, so guard an outage with a rate too.
+- **Garbage is not good news, and neither is silence.** A metric with a missing field, a NaN, or a sum of squares too small for its total used to read as healthy or as a regression. It now reads as nothing. A misspelt event name still gave zeros on both arms, which read as healthy; the PostHog source now refuses an event the project has not seen in a month.
+- **"Passed" was "not yet detectable".** A 25% worse error rate was released two times in three. `mustRuleOut` on a guardrail makes a step wait until a regression that large is ruled out.
+- **A person who lowers a flag is always right; a person who raises one never is.** Every round found another moment (before the first confirmation, 45 seconds after a write, during a release, after one) where a kill switch was overwritten.
+
+The third round's 2,000 chaotic runs found one failure the package doesn't fix: on a provider that can't refuse a stale write, a worker stalled for 18 minutes inside a write landed an old step 3 seconds after its rollback settled. The README lists that limit. PostHog refuses the write.
+
+`pnpm sim` reruns the simulation at full size for its numbers. Still open: the first real rollout, and ratio guardrails are slow (see the README's metric kinds).
+
+## PostHog
+
+PostHog is the first provider with an adapter. It needs a multivariate flag with `control` and `treatment` at 50/50 and one release condition with no filters.
+
+- A step is `set_release_condition_rollout` to twice the step's share. A rollback sets every condition to 0. A release is `roll_out_to_everyone` with `variant_key: "treatment"`.
+- Both calls take the flag's `version` and answer 409 when the flag changed after it. So PostHog itself refuses a stalled worker's late write. The plain `PATCH` with `filters` checks the version only on flags whose `filters.version` is 2, and replaces the whole `filters` object, so the adapter never uses it.
+- `version` goes up by one on every saved edit. That is the ordered revision the package's whole notion of "who changed the flag" rests on.
+- PostHog hashes "is this person in" and "which variant" separately, so raising the percentage keeps everyone who was in and never moves anyone between variants.
+- Server SDKs poll flag definitions every 30 seconds by default. `limits.propagationMs` (60 seconds) is that, doubled.
+- Exposure is the `$feature_flag_called` event (`$feature_flag`, `$feature_flag_response`). The metric source is one HogQL query; it and its freshness query were run against a live PostHog project on 2026-11-21 and parse.
+- These facts come from the descriptions of PostHog's own MCP server tools, read on 2026-11-21.
+
+## What LaunchDarkly publishes, and what it doesn't
+
+Read from its docs on 2026-11-21, for the next person who compares:
+
+- Regressions are checked about every 10 seconds on the absolute difference, new minus old. A regression is a confidence interval entirely on the worse side. At least 10 contexts per variation.
+- The largest step is 50%, with equal traffic on both variations.
+- A sample ratio mismatch rolls back whether or not auto-rollback is on. So does a step that never reaches the minimum sample.
+- A release that makes no progress for 21 days expires.
+- An environment's release starts on a flag evaluation, a deploy signal, a person, or the previous environment finishing.
+- Not published: step sizes and durations, the significance level, the exact bound, the sample ratio test.
+
+## Not built
+
+- Reading a pull request to propose a flag, opening pull requests that remove finished flags, and handing a regression to an agent to fix. LaunchDarkly's product has all three; they are agent work on top of this package.
+- Percentile metrics (P99 latency). Use a `rate` of "slower than the budget" instead.
+- A database-backed store. The README has the one-table Postgres shape; the package ships an in-memory one.
