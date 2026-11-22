@@ -1,4 +1,4 @@
-import type { Person } from "./population";
+import type { Person } from "./population.js";
 
 /**
  * What the new code does to the people who get it. Each effect is the ground truth of one rollout: the

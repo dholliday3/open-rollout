@@ -1,11 +1,11 @@
-import type { Observation, Time } from "./observation";
-import { enter, needsApproval, nextGate, pauseFor, proceedTo, rollBack } from "./transitions";
-import { isInForce, usable } from "./observation";
-import type { MetricSnapshot } from "./ports";
-import type { RolloutRecord } from "./record";
-import type { Step } from "./plan";
-import { judge } from "./judge";
-import { stepAt } from "./plan";
+import type { Observation, Time } from "./observation.js";
+import { enter, needsApproval, nextGate, pauseFor, proceedTo, rollBack } from "./transitions.js";
+import { isInForce, usable } from "./observation.js";
+import type { MetricSnapshot } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import type { Step } from "./plan.js";
+import { judge } from "./judge.js";
+import { stepAt } from "./plan.js";
 
 function giveUpIfLate(record: RolloutRecord, step: Step, now: number): RolloutRecord {
   if (now - (record.confirmedAt ?? now) <= step.maxDurationMs + record.plan.limits.propagationMs) {

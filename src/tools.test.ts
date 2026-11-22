@@ -1,8 +1,8 @@
-import { FIRST_SHARE, FLAG_KEY, METRIC, START, createWorld, runFor, treatmentShare } from "./__tests__/world";
-import type { RolloutTools, ToolCall } from "./tools";
+import { FIRST_SHARE, FLAG_KEY, METRIC, START, createWorld, runFor, treatmentShare } from "./__tests__/world.js";
+import type { RolloutTools, ToolCall } from "./tools.js";
 import { describe, expect, it, vi } from "vitest";
-import type { World } from "./__tests__/world";
-import { rolloutTools } from "./tools";
+import type { World } from "./__tests__/world.js";
+import { rolloutTools } from "./tools.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

@@ -1,7 +1,7 @@
-import { createPostHogMetrics, snapshotFrom, snapshotQuery } from "./posthog-metrics";
+import { createPostHogMetrics, snapshotFrom, snapshotQuery } from "./posthog-metrics.js";
 import { describe, expect, it, vi } from "vitest";
-import type { MetricQuery } from "../ports";
-import type { PostHogReply } from "./posthog-transport";
+import type { MetricQuery } from "../ports.js";
+import type { PostHogReply } from "./posthog-transport.js";
 
 vi.setConfig({ testTimeout: 5000 });
 
@@ -41,7 +41,7 @@ describe("the PostHog metric source", () => {
     const snapshot = snapshotFrom(ROWS, { asOf: NOW, query: QUERY, watermark: NOW });
     expect(snapshot.exposed).toStrictEqual({ control: 40, treatment: 38 });
     expect(snapshot.contaminated).toBe(2);
-    expect(snapshot.metrics.errors.treatment).toStrictEqual({ denominator: { crossSum: 60, sum: 280, sumSquares: 800 }, sum: 12, sumSquares: 20, units: 38 });
+    expect(snapshot.metrics["errors"].treatment).toStrictEqual({ denominator: { crossSum: 60, sum: 280, sumSquares: 800 }, sum: 12, sumSquares: 20, units: 38 });
   });
 
   it("counts an arm with no rows as empty", () => {
@@ -86,7 +86,7 @@ describe("the PostHog metric source's refusals", () => {
   it("keeps a cell that isn't a number as not a number, so the snapshot is refused rather than read as zero", () => {
     expect.hasAssertions();
     const snapshot = snapshotFrom([{ arm: "control", n0_sum: "oops", units: 40 }], { asOf: NOW, query: QUERY, watermark: NOW });
-    expect(snapshot.metrics.errors.control.sum).toBeNaN();
+    expect(snapshot.metrics["errors"].control.sum).toBeNaN();
   });
 
   it("refuses a guardrail with no PostHog definition", () => {

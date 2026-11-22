@@ -1,6 +1,6 @@
-import type { Finding, RolloutRecord } from "./record";
-import { gateName, percent } from "./transitions";
-import type { Inspection } from "./controller";
+import type { Finding, RolloutRecord } from "./record.js";
+import { gateName, percent } from "./transitions.js";
+import type { Inspection } from "./controller.js";
 
 /** One guardrail as a person or an agent needs to read it. */
 interface GuardrailReading {

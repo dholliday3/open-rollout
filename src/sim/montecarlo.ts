@@ -1,10 +1,10 @@
-import { DEFAULT_RUNTIME, runRollout } from "./driver";
-import type { Guardrail, RolloutPlan } from "../plan";
-import type { Outcome, Runtime } from "./driver";
-import { DEFAULT_WORLD } from "./world.options";
-import type { World } from "./world";
-import type { WorldOptions } from "./world.options";
-import { createWorld } from "./world";
+import { DEFAULT_RUNTIME, runRollout } from "./driver.js";
+import type { Guardrail, RolloutPlan } from "../plan.js";
+import type { Outcome, Runtime } from "./driver.js";
+import { DEFAULT_WORLD } from "./world.options.js";
+import type { World } from "./world.js";
+import type { WorldOptions } from "./world.options.js";
+import { createWorld } from "./world.js";
 
 /**
  * Many seeded rollouts of one scenario, and what share of them ended which way. A scenario is a world, a

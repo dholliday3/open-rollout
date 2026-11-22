@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "moduleDetection": "force",
     "types": [],
     "allowJs": true,
@@ -14,9 +14,16 @@
     "skipLibCheck": true,
     "noEmit": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "open-rollout": ["./src/index.ts"],
+      "open-rollout/posthog": ["./src/posthog.ts"],
+      "open-rollout/tools": ["./src/tools.ts"]
+    }
   },
-  "include": ["src", "examples", "vitest.config.ts"]
+  "include": ["src", "examples", "scripts/*.ts", "vitest.config.ts"]
 }

@@ -1,8 +1,8 @@
-import type { Decision, FlagWrite } from "./decide";
-import type { Ports, Stored } from "./ports";
-import type { RolloutRecord } from "./record";
-import { messageOf } from "./observe";
-import { sameAllocation } from "./allocation";
+import type { Decision, FlagWrite } from "./decide.js";
+import type { Ports, Stored } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { messageOf } from "./observe.js";
+import { sameAllocation } from "./allocation.js";
 
 /**
  * A write that failed is sent once more when the flag is exactly one revision on and its shares are still

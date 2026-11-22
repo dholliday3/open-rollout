@@ -1,11 +1,11 @@
-import { EVERYBODY, NOBODY, measuredStep } from "./allocation";
-import { FIRST_SHARE, MINUTE, SECOND_SHARE, START, testPlan } from "./__tests__/world";
+import { EVERYBODY, NOBODY, measuredStep } from "./allocation.js";
+import { FIRST_SHARE, MINUTE, SECOND_SHARE, START, testPlan } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import type { MetricSnapshot } from "./ports";
-import type { RolloutRecord } from "./record";
-import { decide } from "./decide";
-import { newRecord } from "./record";
-import { proceedTo } from "./transitions";
+import type { MetricSnapshot } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { decide } from "./decide.js";
+import { newRecord } from "./record.js";
+import { proceedTo } from "./transitions.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

@@ -1,17 +1,17 @@
-import type { ArmPair, FlagControl, MetricQuery, MetricSnapshot, MetricSource, Ports } from "../ports";
-import type { SimNotifier, SimStore } from "./store";
-import { createSimNotifier, createSimStore } from "./store";
-import type { Autopilot } from "../controller";
-import type { Command } from "../commands";
-import { DEFAULT_LIMITS } from "../plan";
-import { FULL_SHARE } from "../allocation";
-import type { Gate } from "./gate";
-import type { RolloutPlan } from "../plan";
-import type { RolloutRecord } from "../record";
-import type { SimProvider } from "./provider";
-import { createAutopilot } from "../controller";
-import { createRandom } from "./random";
-import { createSimProvider } from "./provider";
+import type { ArmPair, FlagControl, MetricQuery, MetricSnapshot, MetricSource, Ports } from "../ports.js";
+import type { SimNotifier, SimStore } from "./store.js";
+import { createSimNotifier, createSimStore } from "./store.js";
+import type { Autopilot } from "../controller.js";
+import type { Command } from "../commands.js";
+import { DEFAULT_LIMITS } from "../plan.js";
+import { FULL_SHARE } from "../allocation.js";
+import type { Gate } from "./gate.js";
+import type { RolloutPlan } from "../plan.js";
+import type { RolloutRecord } from "../record.js";
+import type { SimProvider } from "./provider.js";
+import { createAutopilot } from "../controller.js";
+import { createRandom } from "./random.js";
+import { createSimProvider } from "./provider.js";
 
 /**
  * A small exact bench for proving one break at a time: steady traffic, fixed error rates, no randomness.
@@ -50,8 +50,8 @@ interface Seen {
 }
 
 interface BenchOptions {
-  readonly plan?: Partial<RolloutPlan>;
-  readonly checksRevision?: boolean;
+  readonly plan?: Partial<RolloutPlan> | undefined;
+  readonly checksRevision?: boolean | undefined;
 }
 
 const MINUTE = 60_000,

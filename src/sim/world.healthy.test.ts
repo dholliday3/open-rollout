@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_LIMITS } from "../plan";
-import { HEALTHY } from "./scenarios";
-import { judgeScenario } from "./report";
-import { runsOr } from "./runs";
+import { DEFAULT_LIMITS } from "../plan.js";
+import { HEALTHY } from "./scenarios.js";
+import { judgeScenario } from "./report.js";
+import { runsOr } from "./runs.js";
 
 vi.setConfig({ testTimeout: 7_200_000 });
 

@@ -1,8 +1,8 @@
-import type { ArmPair, MetricQuery, MetricSnapshot, MetricSource } from "../ports";
-import type { ArmSample } from "../stats";
-import type { Guardrail } from "../plan";
-import type { PostHogTransport } from "./posthog-transport";
-import { bodyOf } from "./posthog-transport";
+import type { ArmPair, MetricQuery, MetricSnapshot, MetricSource } from "../ports.js";
+import type { ArmSample } from "../stats.js";
+import type { Guardrail } from "../plan.js";
+import type { PostHogTransport } from "./posthog-transport.js";
+import { bodyOf } from "./posthog-transport.js";
 import { z } from "zod";
 
 /** Which PostHog events make up one guardrail's metric. */
@@ -151,8 +151,8 @@ function rowsOf(body: unknown): Row[] {
 /** Turns the query's rows (one per arm, and one for units seen on both) into a snapshot. */
 function snapshotFrom(rows: readonly Row[], request: { query: MetricQuery; asOf: number; watermark: number; variants?: { control: string; treatment: string } }): MetricSnapshot {
   const variants = request.variants ?? DEFAULT_VARIANTS,
-    control = rows.find((row) => row.arm === variants.control),
-    treatment = rows.find((row) => row.arm === variants.treatment),
+    control = rows.find((row) => row["arm"] === variants.control),
+    treatment = rows.find((row) => row["arm"] === variants.treatment),
     metrics: Record<string, ArmPair<ArmSample>> = {};
   for (const [index, guardrail] of request.query.guardrails.entries()) {
     metrics[guardrail.metric] = { control: sampleOf(control, index), treatment: sampleOf(treatment, index) };
@@ -160,7 +160,7 @@ function snapshotFrom(rows: readonly Row[], request: { query: MetricQuery; asOf:
   return {
     asOf: request.asOf,
     contaminated: numberAt(
-      rows.find((row) => row.arm === BOTH),
+      rows.find((row) => row["arm"] === BOTH),
       "units",
     ),
     exposed: { control: numberAt(control, "units"), treatment: numberAt(treatment, "units") },
@@ -195,7 +195,7 @@ function createPostHogMetrics(options: PostHogMetricsOptions): MetricSource {
       const asOf = numberAt(latest, "as_of") * MS_PER_SECOND,
         // Complete up to the lag behind PostHog's own clock (a caller whose clock is fast can't claim more), unless nothing at all has arrived that recently.
         watermark = Math.min(until, asOf - options.ingestionLagMs, numberAt(latest, "latest") * MS_PER_SECOND);
-      return snapshotFrom(rows, { asOf, query, variants: options.variants, watermark });
+      return snapshotFrom(rows, { asOf, query, variants: options.variants ?? DEFAULT_VARIANTS, watermark });
     },
   };
 }

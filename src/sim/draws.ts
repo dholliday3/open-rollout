@@ -1,4 +1,4 @@
-import type { Random } from "./random";
+import type { Random } from "./random.js";
 
 /**
  * Distributions the simulated world draws from, all on top of the seeded generator so a run replays from

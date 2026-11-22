@@ -1,9 +1,9 @@
-import type { Observation } from "./observation";
-import type { Ports } from "./ports";
-import type { RolloutRecord } from "./record";
-import { isOpen } from "./observation";
-import { isValidAllocation } from "./allocation";
-import { snapshotProblem } from "./judge";
+import type { Observation } from "./observation.js";
+import type { Ports } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { isOpen } from "./observation.js";
+import { isValidAllocation } from "./allocation.js";
+import { snapshotProblem } from "./judge.js";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

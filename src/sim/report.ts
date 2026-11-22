@@ -1,8 +1,8 @@
-import type { Scenario, Share, Summary } from "./montecarlo";
-import { evidenceShortfalls, writesNobodyAskedFor } from "./oracle";
-import { median, runMany, shareOf } from "./montecarlo";
-import type { Outcome } from "./driver";
-import type { World } from "./world";
+import type { Scenario, Share, Summary } from "./montecarlo.js";
+import { evidenceShortfalls, writesNobodyAskedFor } from "./oracle.js";
+import { median, runMany, shareOf } from "./montecarlo.js";
+import type { Outcome } from "./driver.js";
+import type { World } from "./world.js";
 
 /**
  * Runs a scenario many times and reads the results the way the report wants them: how often the library

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { judge, snapshotProblem } from "./judge";
-import type { Guardrail } from "./plan";
-import type { MetricSnapshot } from "./ports";
-import { testPlan } from "./__tests__/world";
+import { judge, snapshotProblem } from "./judge.js";
+import type { Guardrail } from "./plan.js";
+import type { MetricSnapshot } from "./ports.js";
+import { testPlan } from "./__tests__/world.js";
 
 vi.setConfig({ testTimeout: 5000 });
 
@@ -132,7 +132,7 @@ describe("a ratio the new arm has broken", () => {
 
   it("is not called out when the old arm is the one with nothing under the line, or when there are only a few events", () => {
     expect.hasAssertions();
-    const few = { ...arms(under, nothingUnder).metrics.errors, treatment: { ...top, denominator: nothingUnder, sum: FEW } };
+    const few = { ...arms(under, nothingUnder).metrics["errors"], treatment: { ...top, denominator: nothingUnder, sum: FEW } };
     expect(judge(ratio, arms(nothingUnder, under)).broken).toHaveLength(0);
     expect(judge(ratio, { ...snapshot({}), metrics: { errors: few } }).broken).toHaveLength(0);
   });

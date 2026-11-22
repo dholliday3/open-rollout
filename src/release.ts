@@ -1,6 +1,6 @@
-import type { Autopilot } from "./controller";
-import type { RolloutPlan } from "./plan";
-import { planProblems } from "./plan";
+import type { Autopilot } from "./controller.js";
+import type { RolloutPlan } from "./plan.js";
+import { planProblems } from "./plan.js";
 
 /**
  * A release takes one change through environments in order (staging, then production), each with its

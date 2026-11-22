@@ -1,4 +1,4 @@
-import type { Arm } from "./events";
+import type { Arm } from "./events.js";
 
 /**
  * What really happened to real people, kept apart from everything the library can see. The oracle's

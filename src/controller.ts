@@ -1,16 +1,16 @@
-import type { Command, CommandResult } from "./commands";
-import type { Ports, Stored } from "./ports";
-import { acknowledge, applyWrite } from "./write";
-import { isDone, newRecord, withEvent } from "./record";
-import { judge, snapshotProblem } from "./judge";
-import { messageOf, readFlag, readMetrics } from "./observe";
-import { planProblems, samePlan } from "./plan";
-import type { Judgement } from "./judge";
-import type { RolloutPlan } from "./plan";
-import type { RolloutRecord } from "./record";
-import { applyCommand } from "./commands";
-import { decide } from "./decide";
-import { proceedTo } from "./transitions";
+import type { Command, CommandResult } from "./commands.js";
+import type { Ports, Stored } from "./ports.js";
+import { acknowledge, applyWrite } from "./write.js";
+import { isDone, newRecord, withEvent } from "./record.js";
+import { judge, snapshotProblem } from "./judge.js";
+import { messageOf, readFlag, readMetrics } from "./observe.js";
+import { planProblems, samePlan } from "./plan.js";
+import type { Judgement } from "./judge.js";
+import type { RolloutPlan } from "./plan.js";
+import type { RolloutRecord } from "./record.js";
+import { applyCommand } from "./commands.js";
+import { decide } from "./decide.js";
+import { proceedTo } from "./transitions.js";
 
 interface StartRequest {
   readonly id: string;

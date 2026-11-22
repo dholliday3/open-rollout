@@ -1,32 +1,26 @@
-// Public surface of open-rollout: everything a consumer may import is re-exported here.
-// Deep imports into src/ are not part of the contract.
-export type { Allocation } from "./allocation";
-export type { ArmPair, FlagControl, FlagReading, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored } from "./ports";
-export type { ArmSample, DenominatorSample, Estimate, Interval, MetricKind, SequenceTuning } from "./stats";
-export type { Autopilot, CommandOutcome, Inspection, StartRequest, StartResult, TickResult } from "./controller";
-export type { Command, CommandResult } from "./commands";
-export type { Decision, FlagWrite, Observation } from "./decide";
-export type { Direction, Guardrail, Limits, PlanRequest, Risk, RolloutPlan, Step } from "./plan";
-export type { EventType, Finding, Gate, Outcome, Pause, PauseReason, Phase, RollbackReason, RolloutEvent, RolloutRecord } from "./record";
-export type { Judgement, Regression } from "./judge";
-export type { GuardrailReading, RolloutSummary } from "./summary";
-export type { HogQuery, MetricDefinition, PostHogMetricsOptions } from "./adapters/posthog-metrics";
-export type { MemoryFlags, MemoryMetrics, MemoryNotifier } from "./adapters/memory";
-export type { PostHogCall, PostHogReply, PostHogTransport } from "./adapters/posthog-transport";
-export type { PostHogFlag, PostHogFlagsOptions } from "./adapters/posthog-flags";
-export type { ReleasePorts, ReleaseRecord, ReleaseStage, ReleaseStore, Releaser, StageState, StageStatus, StoredRelease, Trigger } from "./release";
-export type { RolloutTool, RolloutTools, ToolAnswer, ToolCall } from "./tools";
-export { DEFAULT_LIMITS, planProblems, standardPlan, stepAt } from "./plan";
-export { EVERYBODY, FULL_SHARE, HALF_SHARE, NOBODY, exposesMore, isValidAllocation, measuredStep, sameAllocation } from "./allocation";
-export { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "./adapters/memory";
-export { createMemoryReleaseStore, createReleaser, newRelease } from "./release";
-export { differenceInterval, estimateArm, isSampleRatioMismatch, sequenceRadius } from "./stats";
-export { isDone, isLive, newRecord } from "./record";
-export { applyCommand } from "./commands";
-export { createAutopilot } from "./controller";
-export { createPostHogFlags } from "./adapters/posthog-flags";
-export { createPostHogMetrics } from "./adapters/posthog-metrics";
-export { decide } from "./decide";
-export { judge, snapshotProblem } from "./judge";
-export { rolloutTools } from "./tools";
-export { summarize } from "./summary";
+// Public surface of open-rollout's core. Deep imports into src/ are not part of the contract.
+// `open-rollout/posthog` (src/posthog.ts) and `open-rollout/tools` (src/tools.ts) hold the PostHog adapters and
+// `rolloutTools`, so the core loads neither of them nor zod.
+export type { Allocation } from "./allocation.js";
+export type { ArmPair, FlagControl, FlagReading, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored } from "./ports.js";
+export type { ArmSample, DenominatorSample, Estimate, Interval, MetricKind, SequenceTuning } from "./stats.js";
+export type { Autopilot, CommandOutcome, Inspection, StartRequest, StartResult, TickResult } from "./controller.js";
+export type { Command, CommandResult } from "./commands.js";
+export type { Decision, FlagWrite, Observation } from "./decide.js";
+export type { Direction, Guardrail, Limits, PlanRequest, Risk, RolloutPlan, Step } from "./plan.js";
+export type { EventType, Finding, Gate, Outcome, Pause, PauseReason, Phase, RollbackReason, RolloutEvent, RolloutRecord } from "./record.js";
+export type { Judgement, Regression } from "./judge.js";
+export type { GuardrailReading, RolloutSummary } from "./summary.js";
+export type { MemoryFlags, MemoryMetrics, MemoryNotifier } from "./adapters/memory.js";
+export type { ReleasePorts, ReleaseRecord, ReleaseStage, ReleaseStore, Releaser, StageState, StageStatus, StoredRelease, Trigger } from "./release.js";
+export { DEFAULT_LIMITS, planProblems, standardPlan, stepAt } from "./plan.js";
+export { EVERYBODY, FULL_SHARE, HALF_SHARE, NOBODY, exposesMore, isValidAllocation, measuredStep, sameAllocation } from "./allocation.js";
+export { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "./adapters/memory.js";
+export { createMemoryReleaseStore, createReleaser, newRelease } from "./release.js";
+export { differenceInterval, estimateArm, isSampleRatioMismatch, sequenceRadius } from "./stats.js";
+export { isDone, isLive, newRecord } from "./record.js";
+export { applyCommand } from "./commands.js";
+export { createAutopilot } from "./controller.js";
+export { decide } from "./decide.js";
+export { judge, snapshotProblem } from "./judge.js";
+export { summarize } from "./summary.js";

@@ -1,10 +1,10 @@
-import { EVERYBODY, NOBODY, measuredStep } from "../allocation";
-import { FIRST_SHARE, FLAG_KEY, MINUTE, ROLLOUT_ID, SECOND_SHARE, createBench, gatedWorker, idleFor, recordOf, runFor, send, startedBench, treatmentShare } from "./bench";
+import { EVERYBODY, NOBODY, measuredStep } from "../allocation.js";
+import { FIRST_SHARE, FLAG_KEY, MINUTE, ROLLOUT_ID, SECOND_SHARE, createBench, gatedWorker, idleFor, recordOf, runFor, send, startedBench, treatmentShare } from "./bench.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Bench } from "./bench";
-import type { Command } from "../commands";
-import type { Gate } from "./gate";
-import { createGate } from "./gate";
+import type { Bench } from "./bench.js";
+import type { Command } from "../commands.js";
+import type { Gate } from "./gate.js";
+import { createGate } from "./gate.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

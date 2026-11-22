@@ -1,11 +1,11 @@
-import { METRIC, MINUTE, START } from "./__tests__/world";
-import type { Phase, RolloutRecord } from "./record";
+import { METRIC, MINUTE, START } from "./__tests__/world.js";
+import type { Phase, RolloutRecord } from "./record.js";
 import { describe, expect, it, vi } from "vitest";
-import { expire, guard } from "./guard";
-import { healthyAt, watchingStep } from "./__tests__/records";
-import { DEFAULT_LIMITS } from "./plan";
-import type { Guardrail } from "./plan";
-import type { MetricSnapshot } from "./ports";
+import { expire, guard } from "./guard.js";
+import { healthyAt, watchingStep } from "./__tests__/records.js";
+import { DEFAULT_LIMITS } from "./plan.js";
+import type { Guardrail } from "./plan.js";
+import type { MetricSnapshot } from "./ports.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

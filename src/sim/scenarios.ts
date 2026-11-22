@@ -1,11 +1,11 @@
-import { CONVERSION, ERRORS, ERRORS_PER_UNIT, ERROR_RATIO, LATENCY, LATENCY_PER_REQUEST } from "./montecarlo";
-import type { Guardrail, RolloutPlan } from "../plan";
-import { DEFAULT_POPULATION } from "./population";
-import type { EffectName } from "./effects";
-import type { Scenario } from "./montecarlo";
-import type { Scripted } from "./driver";
-import type { World } from "./world";
-import { standardPlan } from "../plan";
+import { CONVERSION, ERRORS, ERRORS_PER_UNIT, ERROR_RATIO, LATENCY, LATENCY_PER_REQUEST } from "./montecarlo.js";
+import type { Guardrail, RolloutPlan } from "../plan.js";
+import { DEFAULT_POPULATION } from "./population.js";
+import type { EffectName } from "./effects.js";
+import type { Scenario } from "./montecarlo.js";
+import type { Scripted } from "./driver.js";
+import type { World } from "./world.js";
+import { standardPlan } from "../plan.js";
 
 /**
  * The scenarios the statistics are measured on. Healthy ones (the new code changes nothing) measure how

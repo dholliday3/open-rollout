@@ -1,10 +1,10 @@
-import { EVERYBODY, NOBODY, measuredStep } from "./allocation";
-import { FIRST_SHARE, MINUTE, SECOND_SHARE, START } from "./__tests__/world";
-import type { RolloutRecord, WriteAttempt } from "./record";
+import { EVERYBODY, NOBODY, measuredStep } from "./allocation.js";
+import { FIRST_SHARE, MINUTE, SECOND_SHARE, START } from "./__tests__/world.js";
+import type { RolloutRecord, WriteAttempt } from "./record.js";
 import { describe, expect, it, vi } from "vitest";
-import { flagAt, watchingStep } from "./__tests__/records";
-import { isLateWrite, reconcile, retreat } from "./reconcile";
-import { DEFAULT_LIMITS } from "./plan";
+import { flagAt, watchingStep } from "./__tests__/records.js";
+import { isLateWrite, reconcile, retreat } from "./reconcile.js";
+import { DEFAULT_LIMITS } from "./plan.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

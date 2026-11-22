@@ -1,7 +1,7 @@
-import type { FlagControl, FlagReading, MetricSnapshot, MetricSource, Notifier, RolloutStore, Stored } from "../ports";
-import type { RolloutEvent, RolloutRecord } from "../record";
-import type { Allocation } from "../allocation";
-import { NOBODY } from "../allocation";
+import type { FlagControl, FlagReading, MetricSnapshot, MetricSource, Notifier, RolloutStore, Stored } from "../ports.js";
+import type { RolloutEvent, RolloutRecord } from "../record.js";
+import type { Allocation } from "../allocation.js";
+import { NOBODY } from "../allocation.js";
 
 /** A flag provider in memory that compares revisions, with a back door for a test to change a flag by hand. */
 interface MemoryFlags extends FlagControl {

@@ -1,10 +1,10 @@
-import { FULL_SHARE, NOBODY } from "../allocation";
-import type { Identity, Person } from "./population";
-import { between, pick } from "./draws";
-import type { Allocation } from "../allocation";
-import type { Arm } from "./events";
-import type { Random } from "./random";
-import type { SimProvider } from "./provider";
+import { FULL_SHARE, NOBODY } from "../allocation.js";
+import type { Identity, Person } from "./population.js";
+import { between, pick } from "./draws.js";
+import type { Allocation } from "../allocation.js";
+import type { Arm } from "./events.js";
+import type { Random } from "./random.js";
+import type { SimProvider } from "./provider.js";
 
 /**
  * Where flags are really evaluated. Nobody asks the provider on every request: servers poll for the flag's

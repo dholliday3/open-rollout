@@ -1,12 +1,12 @@
-import type { ArmPair, MetricSnapshot, RolloutStore } from "../ports";
-import type { MemoryFlags, MemoryMetrics, MemoryNotifier } from "../adapters/memory";
-import { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "../adapters/memory";
-import type { Autopilot } from "../controller";
-import { DEFAULT_LIMITS } from "../plan";
-import { FULL_SHARE } from "../allocation";
-import type { RolloutPlan } from "../plan";
-import type { RolloutRecord } from "../record";
-import { createAutopilot } from "../controller";
+import type { ArmPair, MetricSnapshot, RolloutStore } from "../ports.js";
+import type { MemoryFlags, MemoryMetrics, MemoryNotifier } from "../adapters/memory.js";
+import { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "../adapters/memory.js";
+import type { Autopilot } from "../controller.js";
+import { DEFAULT_LIMITS } from "../plan.js";
+import { FULL_SHARE } from "../allocation.js";
+import type { RolloutPlan } from "../plan.js";
+import type { RolloutRecord } from "../record.js";
+import { createAutopilot } from "../controller.js";
 
 /**
  * A small, exact world for the controller's tests: traffic arrives at a steady rate, splits by whatever the

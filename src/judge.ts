@@ -1,8 +1,8 @@
-import type { ArmPair, MetricSnapshot } from "./ports";
-import type { ArmSample, Interval } from "./stats";
-import type { Guardrail, RolloutPlan } from "./plan";
-import { differenceInterval, estimateArms, isSampleRatioMismatch, sampleProblem } from "./stats";
-import type { Finding } from "./record";
+import type { ArmPair, MetricSnapshot } from "./ports.js";
+import type { ArmSample, Interval } from "./stats.js";
+import type { Guardrail, RolloutPlan } from "./plan.js";
+import { differenceInterval, estimateArms, isSampleRatioMismatch, sampleProblem } from "./stats.js";
+import type { Finding } from "./record.js";
 
 /** A guardrail that the new behaviour has made worse, with the reading that says so. */
 interface Regression {

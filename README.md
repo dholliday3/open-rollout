@@ -49,7 +49,7 @@ import {
   createMemoryStore,
   standardPlan,
 } from "open-rollout";
-import { simulatedTraffic } from "./simulated-traffic";
+import { simulatedTraffic } from "./simulated-traffic.js";
 
 const flags = createMemoryFlags();
 const notifier = createMemoryNotifier();
@@ -162,15 +162,16 @@ People and services steer a rollout with `autopilot.command(id, command, now)` (
 1. Make a multivariate flag with variants `control` and `treatment` at 50/50, and one release condition
    at 0%.
 2. In your app, check `flag === "treatment"`.
-3. Wire the adapters with your API key, as in [`examples/posthog.ts`](examples/posthog.ts).
+3. Wire the adapters from `open-rollout/posthog` with your API key, as in
+   [`examples/posthog.ts`](examples/posthog.ts).
 
 Every write carries the flag's version, so PostHog itself rejects a late write from a stalled worker.
 
 ### Give an AI agent the controls
 
-`rolloutTools(autopilot)` returns `rollout_start`, `rollout_status`, `rollout_pause`, `rollout_resume`,
-`rollout_rollback`, `rollout_approve` and `rollout_release`, each with a zod input schema. They wrap into
-an AI SDK tool or an MCP server in a few lines.
+`rolloutTools(autopilot)`, from `open-rollout/tools`, returns `rollout_start`, `rollout_status`,
+`rollout_pause`, `rollout_resume`, `rollout_rollback`, `rollout_approve` and `rollout_release`, each with a
+zod input schema. They wrap into an AI SDK tool or an MCP server in a few lines.
 
 ```ts
 async function rollBackCheckout(autopilot: Autopilot): Promise<ToolAnswer> {
@@ -261,22 +262,23 @@ new minus old, and a sample ratio check.
   and multi-environment releases.
 - **Not yet proven against the real service:** the PostHog flag adapter has never written a real flag.
   Its tests use a fake that enforces versions the way PostHog's docs describe.
-- **Not built:** a database-backed store, adapters for other providers, percentile metrics, and a
-  compiled build.
+- **Not built:** a database-backed store, adapters for other providers, and percentile metrics.
 - **May change:** any API, before 1.0.
 
 <details>
-<summary>Requirements: Node 22.12+ and a TypeScript-aware loader</summary>
+<summary>Requirements: Node 22.12+</summary>
 
 <br>
 
-The package ships its TypeScript source (`src/index.ts`) with no build step yet:
+The package is compiled JavaScript with type declarations, built when it is installed from GitHub:
 
-- Load it with tsx, Bun or a bundler such as esbuild. Plain `node` won't strip types inside
-  `node_modules`.
-- Type-check with `"moduleResolution": "bundler"`. Under `nodenext`, or with flags beyond `strict` such
-  as `exactOptionalPropertyTypes`, `tsc` reports errors inside the package.
-- The one runtime dependency is zod 4.
+- It is ES modules only. Plain `node` runs it; CommonJS code can `require()` it, which Node 22.12 and
+  later allow for ES modules.
+- Three entry points: `open-rollout` (the core, which loads no other package), `open-rollout/posthog`
+  and `open-rollout/tools`. The one runtime dependency is zod 4, loaded only by the last two.
+- TypeScript needs `"moduleResolution"` set to `node16`, `nodenext` or `bundler`. The types compile with
+  `strict`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature` and
+  `noUncheckedIndexedAccess` on and `skipLibCheck` off.
 
 </details>
 

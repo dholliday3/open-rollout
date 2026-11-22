@@ -62,7 +62,6 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   shape; the package ships an in-memory store.
 - Flag adapters for providers other than PostHog.
 - Percentile metrics (P99 latency). Use a `rate` of "slower than the budget" instead.
-- A compiled build. The package exports TypeScript source; see the README's [install section](../README.md#install).
 - Proposing a flag from a pull request, opening pull requests that remove finished flags, and handing a
   regression to an agent to fix. These are agent work on top of this package; `rollout_status` returns
   each guardrail's reading, which is where such an agent would start.

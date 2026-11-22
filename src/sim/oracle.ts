@@ -1,8 +1,8 @@
-import { measuredStep, sameAllocation } from "../allocation";
-import type { Arm } from "./events";
-import { ROLLOUT } from "./driver";
-import type { Saved } from "./store";
-import type { World } from "./world";
+import { measuredStep, sameAllocation } from "../allocation.js";
+import type { Arm } from "./events.js";
+import { ROLLOUT } from "./driver.js";
+import type { Saved } from "./store.js";
+import type { World } from "./world.js";
 
 /**
  * The oracle for a rollout in the stochastic world. It reads the truth (what the provider really served

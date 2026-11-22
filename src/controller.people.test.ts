@@ -1,5 +1,5 @@
-import { BASE_ERROR_RATE, FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, recordOf, runFor, startedWorld, treatmentShare } from "./__tests__/world";
-import { EVERYBODY, FULL_SHARE, NOBODY, measuredStep } from "./allocation";
+import { BASE_ERROR_RATE, FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, recordOf, runFor, startedWorld, treatmentShare } from "./__tests__/world.js";
+import { EVERYBODY, FULL_SHARE, NOBODY, measuredStep } from "./allocation.js";
 import { describe, expect, it, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 10_000 });

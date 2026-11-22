@@ -1,11 +1,11 @@
-import type { Finding, RolloutRecord } from "./record";
-import { isLive, withEvent } from "./record";
-import { pauseFor, rollBack } from "./transitions";
-import type { Judgement } from "./judge";
-import type { MetricSnapshot } from "./ports";
-import type { Time } from "./observation";
-import { judge } from "./judge";
-import { usable } from "./observation";
+import type { Finding, RolloutRecord } from "./record.js";
+import { isLive, withEvent } from "./record.js";
+import { pauseFor, rollBack } from "./transitions.js";
+import type { Judgement } from "./judge.js";
+import type { MetricSnapshot } from "./ports.js";
+import type { Time } from "./observation.js";
+import { judge } from "./judge.js";
+import { usable } from "./observation.js";
 
 function describeFinding(finding: Finding): string {
   return `${finding.metric} is ${finding.treatment} on the new behaviour against ${finding.control} on the old; the gap is at least ${Math.min(Math.abs(finding.difference.lower), Math.abs(finding.difference.upper))}.`;

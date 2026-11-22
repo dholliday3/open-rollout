@@ -1,8 +1,8 @@
-import { NOBODY, measuredStep } from "../allocation";
-import type { Allocation } from "../allocation";
-import type { Chaos } from "./chaos";
-import { FLAG_KEY } from "./bench";
-import { pick } from "./draws";
+import { NOBODY, measuredStep } from "../allocation.js";
+import type { Allocation } from "../allocation.js";
+import type { Chaos } from "./chaos.js";
+import { FLAG_KEY } from "./bench.js";
+import { pick } from "./draws.js";
 
 /**
  * What goes wrong around a rollout in a chaotic run: people at the provider's console, a provider and a

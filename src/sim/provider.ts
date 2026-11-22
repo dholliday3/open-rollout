@@ -1,7 +1,7 @@
-import type { FlagControl, FlagReading } from "../ports";
-import type { Allocation } from "../allocation";
-import { NOBODY } from "../allocation";
-import type { Random } from "./random";
+import type { FlagControl, FlagReading } from "../ports.js";
+import type { Allocation } from "../allocation.js";
+import { NOBODY } from "../allocation.js";
+import type { Random } from "./random.js";
 
 /**
  * A flag provider's management side, modelled on PostHog: one flag is one whole state with a version that

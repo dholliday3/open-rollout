@@ -1,7 +1,7 @@
-import type { FlagReading, MetricSnapshot } from "./ports";
-import type { RolloutRecord } from "./record";
-import { sameAllocation } from "./allocation";
-import { snapshotProblem } from "./judge";
+import type { FlagReading, MetricSnapshot } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { sameAllocation } from "./allocation.js";
+import { snapshotProblem } from "./judge.js";
 
 /**
  * What one tick saw. A null is a read that failed, which is never taken as good news. The metrics are read

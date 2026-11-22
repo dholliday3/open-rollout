@@ -1,14 +1,14 @@
-import { CONVERSION, ERRORS, ERRORS_PER_UNIT, ERROR_RATIO, LATENCY, shareOf } from "./montecarlo";
-import { binomial, logNormal, pareto, poisson } from "./draws";
+import { CONVERSION, ERRORS, ERRORS_PER_UNIT, ERROR_RATIO, LATENCY, shareOf } from "./montecarlo.js";
+import { binomial, logNormal, pareto, poisson } from "./draws.js";
 import { describe, expect, it, vi } from "vitest";
-import type { ArmSample } from "../stats";
-import type { Guardrail } from "../plan";
-import type { MetricSnapshot } from "../ports";
-import type { Random } from "./random";
-import { createRandom } from "./random";
-import { judge } from "../judge";
-import { low } from "./scenarios";
-import { runsOr } from "./runs";
+import type { ArmSample } from "../stats.js";
+import type { Guardrail } from "../plan.js";
+import type { MetricSnapshot } from "../ports.js";
+import type { Random } from "./random.js";
+import { createRandom } from "./random.js";
+import { judge } from "../judge.js";
+import { low } from "./scenarios.js";
+import { runsOr } from "./runs.js";
 
 vi.setConfig({ testTimeout: 3_600_000 });
 

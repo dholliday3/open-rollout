@@ -1,4 +1,4 @@
-import type { ActivityEvent, Arm } from "./events";
+import type { ActivityEvent, Arm } from "./events.js";
 
 /**
  * How the pipeline counts people: one unit per person it knows of, on the arm of its first exposure, with

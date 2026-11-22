@@ -1,5 +1,6 @@
-import type { Autopilot, ToolAnswer } from "open-rollout";
-import { rolloutTools } from "open-rollout";
+import type { Autopilot } from "open-rollout";
+import type { ToolAnswer } from "open-rollout/tools";
+import { rolloutTools } from "open-rollout/tools";
 
 async function tickRollouts(autopilot: Autopilot): Promise<void> {
   const results = await autopilot.tickAll(Date.now());

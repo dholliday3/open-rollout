@@ -1,11 +1,11 @@
-import type { ActivityEvent, Arm } from "./events";
-import { HOUR, START } from "./world.options";
-import { between, binomial, logNormal, poisson } from "./draws";
-import { EFFECTS } from "./effects";
-import type { Person } from "./population";
-import type { World } from "./world";
-import { armOf } from "./evaluators";
-import { noteServed } from "./truth";
+import type { ActivityEvent, Arm } from "./events.js";
+import { HOUR, START } from "./world.options.js";
+import { between, binomial, logNormal, poisson } from "./draws.js";
+import { EFFECTS } from "./effects.js";
+import type { Person } from "./population.js";
+import type { World } from "./world.js";
+import { armOf } from "./evaluators.js";
+import { noteServed } from "./truth.js";
 
 /**
  * Visits: who comes, what the flag gives them, what happens to them, and what the product reports about it.

@@ -1,8 +1,8 @@
-import { EVERYBODY, measuredStep } from "../allocation";
-import { FIRST_SHARE, FLAG_KEY, METRIC, MINUTE, ROLLOUT_ID, SECOND_SHARE, createBench, idleFor, recordOf, runFor, send, startedBench, treatmentShare } from "./bench";
+import { EVERYBODY, measuredStep } from "../allocation.js";
+import { FIRST_SHARE, FLAG_KEY, METRIC, MINUTE, ROLLOUT_ID, SECOND_SHARE, createBench, idleFor, recordOf, runFor, send, startedBench, treatmentShare } from "./bench.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Bench } from "./bench";
-import type { MetricSnapshot } from "../ports";
+import type { Bench } from "./bench.js";
+import type { MetricSnapshot } from "../ports.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

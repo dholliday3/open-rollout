@@ -1,15 +1,15 @@
-import type { Gate, RolloutRecord } from "./record";
-import { gateName, pauseFor, release, rollBack } from "./transitions";
-import { isDone, isLive, withCommand, withEvent } from "./record";
+import type { Gate, RolloutRecord } from "./record.js";
+import { gateName, pauseFor, release, rollBack } from "./transitions.js";
+import { isDone, isLive, withCommand, withEvent } from "./record.js";
 
 /**
  * What a person, or an agent acting for one, can tell a rollout to do. `id` names the command, so sending
  * it twice does it once. `by` is whoever asked, for the record.
  */
 type Command =
-  | { readonly id: string; readonly by: string; readonly type: "pause"; readonly note?: string }
+  | { readonly id: string; readonly by: string; readonly type: "pause"; readonly note?: string | undefined }
   | { readonly id: string; readonly by: string; readonly type: "resume" }
-  | { readonly id: string; readonly by: string; readonly type: "rollback"; readonly note?: string }
+  | { readonly id: string; readonly by: string; readonly type: "rollback"; readonly note?: string | undefined }
   | { readonly id: string; readonly by: string; readonly type: "release" }
   | { readonly id: string; readonly by: string; readonly type: "approve"; readonly gate: Gate };
 

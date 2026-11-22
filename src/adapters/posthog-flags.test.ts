@@ -1,8 +1,8 @@
-import { EVERYBODY, NOBODY, measuredStep } from "../allocation";
-import type { PostHogCall, PostHogReply } from "./posthog-transport";
-import { allocationOf, changesFor, createPostHogFlags } from "./posthog-flags";
+import { EVERYBODY, NOBODY, measuredStep } from "../allocation.js";
+import type { PostHogCall, PostHogReply } from "./posthog-transport.js";
+import { allocationOf, changesFor, createPostHogFlags } from "./posthog-flags.js";
 import { describe, expect, it, vi } from "vitest";
-import type { PostHogFlag } from "./posthog-flags";
+import type { PostHogFlag } from "./posthog-flags.js";
 import { z } from "zod";
 
 vi.setConfig({ testTimeout: 5000 });

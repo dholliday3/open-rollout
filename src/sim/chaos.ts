@@ -1,13 +1,13 @@
-import type { Gate, Parked } from "./gate";
-import { MINUTE, ROLLOUT_ID, createBench, gatedWorker, passTime, recordOf } from "./bench";
-import { between, pick } from "./draws";
-import { createGate, settle } from "./gate";
-import { mischief, note } from "./chaos.mischief";
-import type { Bench } from "./bench";
-import type { Command } from "../commands";
-import type { Random } from "./random";
-import type { RolloutPlan } from "../plan";
-import { createRandom } from "./random";
+import type { Gate, Parked } from "./gate.js";
+import { MINUTE, ROLLOUT_ID, createBench, gatedWorker, passTime, recordOf } from "./bench.js";
+import { between, pick } from "./draws.js";
+import { createGate, settle } from "./gate.js";
+import { mischief, note } from "./chaos.mischief.js";
+import type { Bench } from "./bench.js";
+import type { Command } from "../commands.js";
+import type { Random } from "./random.js";
+import type { RolloutPlan } from "../plan.js";
+import { createRandom } from "./random.js";
 
 /**
  * A runtime that does everything a durable runtime is allowed to: several workers at once with their port

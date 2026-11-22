@@ -1,4 +1,4 @@
-import type { Ports } from "../ports";
+import type { Ports } from "../ports.js";
 
 /**
  * Puts a gate in front of every port call, so a test or the scheduler decides when each one happens.

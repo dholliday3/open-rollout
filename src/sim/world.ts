@@ -1,22 +1,22 @@
-import type { SimNotifier, SimStore } from "./store";
-import { createSimNotifier, createSimStore } from "./store";
-import type { Evaluators } from "./evaluators";
-import type { Pipeline } from "./pipeline";
-import type { Population } from "./population";
-import type { Ports } from "../ports";
-import type { Random } from "./random";
-import type { SimProvider } from "./provider";
-import type { SimSource } from "./source";
-import type { Truth } from "./truth";
-import type { WorldOptions } from "./world.options";
-import { createEvaluators } from "./evaluators";
-import { createPipeline } from "./pipeline";
-import { createPopulation } from "./population";
-import { createRandom } from "./random";
-import { createSimProvider } from "./provider";
-import { createSimSource } from "./source";
-import { createTruth } from "./truth";
-import { startOf } from "./world.options";
+import type { SimNotifier, SimStore } from "./store.js";
+import { createSimNotifier, createSimStore } from "./store.js";
+import type { Evaluators } from "./evaluators.js";
+import type { Pipeline } from "./pipeline.js";
+import type { Population } from "./population.js";
+import type { Ports } from "../ports.js";
+import type { Random } from "./random.js";
+import type { SimProvider } from "./provider.js";
+import type { SimSource } from "./source.js";
+import type { Truth } from "./truth.js";
+import type { WorldOptions } from "./world.options.js";
+import { createEvaluators } from "./evaluators.js";
+import { createPipeline } from "./pipeline.js";
+import { createPopulation } from "./population.js";
+import { createRandom } from "./random.js";
+import { createSimProvider } from "./provider.js";
+import { createSimSource } from "./source.js";
+import { createTruth } from "./truth.js";
+import { startOf } from "./world.options.js";
 
 /**
  * One simulated production: people, a flag provider, evaluators, a metrics pipeline, a store, and the truth

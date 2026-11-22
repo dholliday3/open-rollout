@@ -1,10 +1,10 @@
-import { backToStep, pauseFor, percent } from "./transitions";
-import { exposesMore, sameAllocation } from "./allocation";
-import { isDone, withEvent } from "./record";
-import type { Allocation } from "./allocation";
-import type { FlagReading } from "./ports";
-import type { RolloutRecord } from "./record";
-import { isStepOf } from "./plan";
+import { backToStep, pauseFor, percent } from "./transitions.js";
+import { exposesMore, sameAllocation } from "./allocation.js";
+import { isDone, withEvent } from "./record.js";
+import type { Allocation } from "./allocation.js";
+import type { FlagReading } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { isStepOf } from "./plan.js";
 
 function finish(record: RolloutRecord, now: number): RolloutRecord {
   const undone = record.phase === "rolling_back",

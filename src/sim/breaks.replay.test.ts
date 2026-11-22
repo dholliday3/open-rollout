@@ -1,8 +1,8 @@
-import { ROLLOUT_ID, createBench, recordOf, runFor, send, startedBench, treatmentShare } from "./bench";
+import { ROLLOUT_ID, createBench, recordOf, runFor, send, startedBench, treatmentShare } from "./bench.js";
 import { describe, expect, it, vi } from "vitest";
-import type { RolloutRecord } from "../record";
-import type { RolloutStore } from "../ports";
-import { createAutopilot } from "../controller";
+import type { RolloutRecord } from "../record.js";
+import type { RolloutStore } from "../ports.js";
+import { createAutopilot } from "../controller.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

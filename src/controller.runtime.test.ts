@@ -1,4 +1,4 @@
-import { FIRST_SHARE, FLAG_KEY, MINUTE, ROLLOUT_ID, createWorld, eventTypes, passMinute, recordOf, runFor, startRollout, startedWorld, treatmentShare } from "./__tests__/world";
+import { FIRST_SHARE, FLAG_KEY, MINUTE, ROLLOUT_ID, createWorld, eventTypes, passMinute, recordOf, runFor, startRollout, startedWorld, treatmentShare } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 10_000 });

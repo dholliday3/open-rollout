@@ -1,7 +1,7 @@
-import { FIRST_SHARE, METRIC, MINUTE, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, snapshotOf, startRollout, startedWorld, treatmentShare } from "./__tests__/world";
+import { FIRST_SHARE, METRIC, MINUTE, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, snapshotOf, startRollout, startedWorld, treatmentShare } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import type { MetricSnapshot } from "./ports";
-import type { World } from "./__tests__/world";
+import type { MetricSnapshot } from "./ports.js";
+import type { World } from "./__tests__/world.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

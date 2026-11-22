@@ -1,8 +1,8 @@
-import type { ArmSample, Interval, MetricKind, SequenceTuning } from "./stats";
+import type { ArmSample, Interval, MetricKind, SequenceTuning } from "./stats.js";
 import { describe, expect, it, vi } from "vitest";
-import { differenceInterval, estimateArm, isSampleRatioMismatch } from "./stats";
-import type { Random } from "./sim/random";
-import { createRandom } from "./sim/random";
+import { differenceInterval, estimateArm, isSampleRatioMismatch } from "./stats.js";
+import type { Random } from "./sim/random.js";
+import { createRandom } from "./sim/random.js";
 
 vi.setConfig({ testTimeout: 60_000 });
 

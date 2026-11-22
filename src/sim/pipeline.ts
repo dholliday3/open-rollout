@@ -1,8 +1,8 @@
-import type { Totals, Unit } from "./units";
-import { contributionOf, dropRepeats, emptyTotals, tally } from "./units";
-import type { Heap } from "./heap";
-import type { SimEvent } from "./events";
-import { createHeap } from "./heap";
+import type { Totals, Unit } from "./units.js";
+import { contributionOf, dropRepeats, emptyTotals, tally } from "./units.js";
+import type { Heap } from "./heap.js";
+import type { SimEvent } from "./events.js";
+import { createHeap } from "./heap.js";
 
 /**
  * The metrics pipeline between the product and the metric source. Events reach it late and out of order,

@@ -1,9 +1,9 @@
-import { FIRST_SHARE, METRIC, ROLLOUT_ID, benchPlan, recordOf, runFor, startedBench, treatmentShare } from "./bench";
+import { FIRST_SHARE, METRIC, ROLLOUT_ID, benchPlan, recordOf, runFor, startedBench, treatmentShare } from "./bench.js";
 import { describe, expect, it, vi } from "vitest";
-import type { ArmSample } from "../stats";
-import type { Guardrail } from "../plan";
-import type { MetricSnapshot } from "../ports";
-import { judge } from "../judge";
+import type { ArmSample } from "../stats.js";
+import type { Guardrail } from "../plan.js";
+import type { MetricSnapshot } from "../ports.js";
+import { judge } from "../judge.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

@@ -1,8 +1,8 @@
-import type { ReleaseStage, Releaser } from "./release";
-import { createMemoryReleaseStore, createReleaser, newRelease, nextToStart, observed, resumed, rolloutId, signalled } from "./release";
-import { createWorld, passMinute, testPlan } from "./__tests__/world";
+import type { ReleaseStage, Releaser } from "./release.js";
+import { createMemoryReleaseStore, createReleaser, newRelease, nextToStart, observed, resumed, rolloutId, signalled } from "./release.js";
+import { createWorld, passMinute, testPlan } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import type { World } from "./__tests__/world";
+import type { World } from "./__tests__/world.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 
@@ -16,11 +16,11 @@ const WHOLE_ROLLOUT = 40,
 
 interface Setup {
   readonly releaser: Releaser;
-  readonly worlds: Record<string, World>;
+  readonly worlds: { readonly production: World; readonly staging: World };
 }
 
 function setup(): Setup {
-  const worlds: Record<string, World> = { production: createWorld(), staging: createWorld() },
+  const worlds = { production: createWorld(), staging: createWorld() },
     autopilotFor = (environment: string) => (environment === "staging" ? worlds.staging : worlds.production).autopilot;
   return { releaser: createReleaser({ autopilotFor, store: createMemoryReleaseStore() }), worlds };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { REGRESSIONS } from "./scenarios";
-import { judgeScenario } from "./report";
-import { runsOr } from "./runs";
+import { REGRESSIONS } from "./scenarios.js";
+import { judgeScenario } from "./report.js";
+import { runsOr } from "./runs.js";
 
 vi.setConfig({ testTimeout: 7_200_000 });
 

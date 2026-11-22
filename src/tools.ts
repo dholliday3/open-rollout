@@ -1,8 +1,9 @@
-import type { Autopilot, CommandOutcome } from "./controller";
-import type { Command } from "./commands";
-import type { RolloutSummary } from "./summary";
-import { standardPlan } from "./plan";
-import { summarize } from "./summary";
+import type { Autopilot, CommandOutcome } from "./controller.js";
+import type { Command } from "./commands.js";
+import type { Guardrail } from "./plan.js";
+import type { RolloutSummary } from "./summary.js";
+import { standardPlan } from "./plan.js";
+import { summarize } from "./summary.js";
 import { z } from "zod";
 
 /**
@@ -74,8 +75,13 @@ async function tell(autopilot: Autopilot, id: string, issued: { command: Command
   return said;
 }
 
+/** A guardrail as the plan holds it: a `mustRuleOut` the agent left out is not there at all, so the plan compares equal after a trip through JSON. */
+function guardrailOf({ mustRuleOut, ...guardrail }: z.infer<typeof guardrailShape>): Guardrail {
+  return mustRuleOut === undefined ? guardrail : { ...guardrail, mustRuleOut };
+}
+
 async function begin(autopilot: Autopilot, input: z.infer<typeof startShape>, call: ToolCall): Promise<ToolAnswer> {
-  const plan = standardPlan({ flagKey: input.flagKey, guardrails: input.guardrails, risk: input.risk }),
+  const plan = standardPlan({ flagKey: input.flagKey, guardrails: input.guardrails.map((guardrail) => guardrailOf(guardrail)), risk: input.risk }),
     result = await autopilot.start({ id: input.id, now: call.now, plan }),
     said = await answer(autopilot, input.id, { message: result.status === "started" ? "The rollout has started." : result.problems.join(" "), ok: result.status === "started" });
   return said;

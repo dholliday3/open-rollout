@@ -1,11 +1,11 @@
-import type { ReleaseStage, Releaser } from "../release";
-import { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "../adapters/memory";
-import { createMemoryReleaseStore, createReleaser } from "../release";
+import type { ReleaseStage, Releaser } from "../release.js";
+import { createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore } from "../adapters/memory.js";
+import { createMemoryReleaseStore, createReleaser } from "../release.js";
 import { describe, expect, it, vi } from "vitest";
-import { EVERYBODY } from "../allocation";
-import type { MemoryFlags } from "../adapters/memory";
-import { benchPlan } from "./bench";
-import { createAutopilot } from "../controller";
+import { EVERYBODY } from "../allocation.js";
+import type { MemoryFlags } from "../adapters/memory.js";
+import { benchPlan } from "./bench.js";
+import { createAutopilot } from "../controller.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

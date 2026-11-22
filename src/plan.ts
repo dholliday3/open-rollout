@@ -1,5 +1,5 @@
-import { HALF_SHARE } from "./allocation";
-import type { MetricKind } from "./stats";
+import { HALF_SHARE } from "./allocation.js";
+import type { MetricKind } from "./stats.js";
 
 /** Which way a metric gets worse. */
 type Direction = "lower_is_better" | "higher_is_better";

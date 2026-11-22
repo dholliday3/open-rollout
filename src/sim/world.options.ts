@@ -1,11 +1,11 @@
-import { DEFAULT_EVALUATORS } from "./evaluators";
-import { DEFAULT_POPULATION } from "./population";
-import type { EffectName } from "./effects";
-import type { EvaluatorOptions } from "./evaluators";
-import type { PipelineOptions } from "./pipeline";
-import type { PopulationOptions } from "./population";
-import type { RolloutPlan } from "../plan";
-import type { WatermarkRule } from "./source";
+import { DEFAULT_EVALUATORS } from "./evaluators.js";
+import { DEFAULT_POPULATION } from "./population.js";
+import type { EffectName } from "./effects.js";
+import type { EvaluatorOptions } from "./evaluators.js";
+import type { PipelineOptions } from "./pipeline.js";
+import type { PopulationOptions } from "./population.js";
+import type { RolloutPlan } from "../plan.js";
+import type { WatermarkRule } from "./source.js";
 
 /**
  * Everything that can be chosen about a simulated production, and the defaults: a busy afternoon, most

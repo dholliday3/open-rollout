@@ -1,10 +1,10 @@
-import { between, pick } from "./draws";
-import type { Autopilot } from "../controller";
-import type { RolloutRecord } from "../record";
-import type { World } from "./world";
-import { advanceWorld } from "./traffic";
-import { createAutopilot } from "../controller";
-import { servedTreatmentAfter } from "./truth";
+import { between, pick } from "./draws.js";
+import type { Autopilot } from "../controller.js";
+import type { RolloutRecord } from "../record.js";
+import type { World } from "./world.js";
+import { advanceWorld } from "./traffic.js";
+import { createAutopilot } from "../controller.js";
+import { servedTreatmentAfter } from "./truth.js";
 
 /**
  * A runtime that drives one rollout through a world the way a schedule with leases would: ticks at

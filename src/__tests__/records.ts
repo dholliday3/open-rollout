@@ -1,9 +1,9 @@
-import { FIRST_SHARE, START, testPlan } from "./world";
-import type { FlagReading, MetricSnapshot } from "../ports";
-import type { RolloutPlan } from "../plan";
-import type { RolloutRecord } from "../record";
-import { measuredStep } from "../allocation";
-import { newRecord } from "../record";
+import { FIRST_SHARE, START, testPlan } from "./world.js";
+import type { FlagReading, MetricSnapshot } from "../ports.js";
+import type { RolloutPlan } from "../plan.js";
+import type { RolloutRecord } from "../record.js";
+import { measuredStep } from "../allocation.js";
+import { newRecord } from "../record.js";
 
 /** Hand-made records and observations for the pure stages' tests: a rollout at a known point, with nothing left to chance. */
 

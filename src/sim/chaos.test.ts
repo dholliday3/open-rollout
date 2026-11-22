@@ -1,9 +1,9 @@
-import type { Chaos, ChaosOptions } from "./chaos";
-import { FLAG_KEY, ROLLOUT_ID, benchPlan, recordOf } from "./bench";
-import { chaosSeeds, isReplay } from "./runs";
-import { cleanTicks, runChaos } from "./chaos";
+import type { Chaos, ChaosOptions } from "./chaos.js";
+import { FLAG_KEY, ROLLOUT_ID, benchPlan, recordOf } from "./bench.js";
+import { chaosSeeds, isReplay } from "./runs.js";
+import { cleanTicks, runChaos } from "./chaos.js";
 import { describe, expect, it, vi } from "vitest";
-import { lostEvents, notConverged, safetyViolations } from "./chaos.invariants";
+import { lostEvents, notConverged, safetyViolations } from "./chaos.invariants.js";
 
 vi.setConfig({ testTimeout: 600_000 });
 

@@ -1,15 +1,15 @@
-import { DEFAULT_POPULATION, createPopulation } from "./population";
-import { EVERYBODY, measuredStep } from "../allocation";
-import { armOf, createEvaluators } from "./evaluators";
-import { binomial, logNormal, pareto, poisson } from "./draws";
+import { DEFAULT_POPULATION, createPopulation } from "./population.js";
+import { EVERYBODY, measuredStep } from "../allocation.js";
+import { armOf, createEvaluators } from "./evaluators.js";
+import { binomial, logNormal, pareto, poisson } from "./draws.js";
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_WORLD } from "./world.options";
-import type { Identity } from "./population";
-import type { World } from "./world";
-import { advanceWorld } from "./traffic";
-import { benchPlan } from "./bench";
-import { createRandom } from "./random";
-import { createWorld } from "./world";
+import { DEFAULT_WORLD } from "./world.options.js";
+import type { Identity } from "./population.js";
+import type { World } from "./world.js";
+import { advanceWorld } from "./traffic.js";
+import { benchPlan } from "./bench.js";
+import { createRandom } from "./random.js";
+import { createWorld } from "./world.js";
 
 vi.setConfig({ testTimeout: 60_000 });
 

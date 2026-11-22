@@ -1,6 +1,6 @@
-import { logNormal, pareto, pick } from "./draws";
-import type { Allocation } from "../allocation";
-import type { Random } from "./random";
+import { logNormal, pareto, pick } from "./draws.js";
+import type { Allocation } from "../allocation.js";
+import type { Random } from "./random.js";
 
 /**
  * The people who visit. A few make most of the requests, each has their own luck with errors (so one

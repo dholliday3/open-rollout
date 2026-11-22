@@ -1,10 +1,10 @@
-import { DEFAULT_LIMITS, stepAt } from "./plan";
-import { FIRST_SHARE, MINUTE, START, testPlan } from "./__tests__/world";
+import { DEFAULT_LIMITS, stepAt } from "./plan.js";
+import { FIRST_SHARE, MINUTE, START, testPlan } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import { flagAt, healthyAt, watchingStep } from "./__tests__/records";
-import { progress, throughOpenGate } from "./progress";
-import type { Observation } from "./observation";
-import type { RolloutRecord } from "./record";
+import { flagAt, healthyAt, watchingStep } from "./__tests__/records.js";
+import { progress, throughOpenGate } from "./progress.js";
+import type { Observation } from "./observation.js";
+import type { RolloutRecord } from "./record.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

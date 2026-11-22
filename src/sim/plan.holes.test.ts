@@ -1,7 +1,7 @@
-import { DEFAULT_LIMITS, planProblems } from "../plan";
+import { DEFAULT_LIMITS, planProblems } from "../plan.js";
 import { describe, expect, it, vi } from "vitest";
-import type { RolloutPlan } from "../plan";
-import { benchPlan } from "./bench";
+import type { RolloutPlan } from "../plan.js";
+import { benchPlan } from "./bench.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

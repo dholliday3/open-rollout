@@ -1,8 +1,8 @@
-import { EVERYBODY, HALF_SHARE, measuredStep, sameAllocation } from "../allocation";
-import { FLAG_KEY, ROLLOUT_ID } from "./bench";
-import type { Chaos } from "./chaos";
-import type { FlagChange } from "./provider";
-import type { Saved } from "./store";
+import { EVERYBODY, HALF_SHARE, measuredStep, sameAllocation } from "../allocation.js";
+import { FLAG_KEY, ROLLOUT_ID } from "./bench.js";
+import type { Chaos } from "./chaos.js";
+import type { FlagChange } from "./provider.js";
+import type { Saved } from "./store.js";
 
 /**
  * The oracle for a chaotic run. Every check reads what really happened (the provider's own list of changes

@@ -1,11 +1,11 @@
-import { EVERYBODY, NOBODY } from "./allocation";
-import { MINUTE, START, testPlan } from "./__tests__/world";
+import { EVERYBODY, NOBODY } from "./allocation.js";
+import { MINUTE, START, testPlan } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Command } from "./commands";
-import type { RolloutRecord } from "./record";
-import { applyCommand } from "./commands";
-import { newRecord } from "./record";
-import { proceedTo } from "./transitions";
+import type { Command } from "./commands.js";
+import type { RolloutRecord } from "./record.js";
+import { applyCommand } from "./commands.js";
+import { newRecord } from "./record.js";
+import { proceedTo } from "./transitions.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

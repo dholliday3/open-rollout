@@ -23,9 +23,9 @@ interface ArmSample {
   /** Units that had the event for a rate, the total for a mean, the numerator's total for a ratio. */
   readonly sum: number;
   /** Sum of each unit's value squared. A rate doesn't use it. */
-  readonly sumSquares?: number;
+  readonly sumSquares?: number | undefined;
   /** Ratio only (errors per request, measured per person): the requests. */
-  readonly denominator?: DenominatorSample;
+  readonly denominator?: DenominatorSample | undefined;
 }
 
 /** A metric's value on one arm, with the variance of that value. */

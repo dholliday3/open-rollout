@@ -2,7 +2,7 @@ import { NOBODY, createAutopilot, createMemoryFlags, createMemoryNotifier, creat
 import { describe, expect, it, vi } from "vitest";
 // eslint-disable-next-line import/no-nodejs-modules -- the README is read from disk so its samples can't drift from these files
 import { readFile, readdir } from "node:fs/promises";
-import { simulatedTraffic } from "./simulated-traffic";
+import { simulatedTraffic } from "./simulated-traffic.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 
@@ -14,7 +14,7 @@ const FLAG_KEY = "new-checkout",
   MINUTE = 60_000,
   HERE = new URL(".", import.meta.url),
   README = await readFile(new URL("../README.md", HERE), "utf8"),
-  README_SAMPLES = [...README.matchAll(/```ts\n(?<code>[\s\S]*?)```/g)].map((match) => match.groups?.code ?? ""),
+  README_SAMPLES = [...README.matchAll(/```ts\n(?<code>[\s\S]*?)```/g)].map((match) => match.groups?.["code"] ?? ""),
   EXAMPLE_NAMES = (await readdir(HERE)).filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts")),
   EXAMPLES = await Promise.all(
     EXAMPLE_NAMES.map(async (name) => {
@@ -45,7 +45,7 @@ describe("the README's quickstart", () => {
   it("releases a change that is no worse, one step at a time, and prints what the README shows", async () => {
     expect.hasAssertions();
     const log = vi.spyOn(console, "log");
-    await import("./quickstart");
+    await import("./quickstart.js");
     expect(log.mock.calls.map(([line]: unknown[]) => line)).toStrictEqual([
       "started: Rollout of new-checkout started.",
       "step_started: 10% of traffic is on the new behaviour.",

@@ -1,7 +1,7 @@
-import { EVERYBODY, NOBODY, measuredStep } from "./allocation";
-import type { Finding, Gate, PauseReason, RollbackReason, RolloutRecord } from "./record";
-import { isDone, isLive, withEvent } from "./record";
-import { stepAt } from "./plan";
+import { EVERYBODY, NOBODY, measuredStep } from "./allocation.js";
+import type { Finding, Gate, PauseReason, RollbackReason, RolloutRecord } from "./record.js";
+import { isDone, isLive, withEvent } from "./record.js";
+import { stepAt } from "./plan.js";
 
 interface Why<Reason> {
   readonly reason: Reason;

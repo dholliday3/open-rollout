@@ -1,7 +1,7 @@
-import type { RolloutEvent, RolloutRecord } from "./record";
-import type { Allocation } from "./allocation";
-import type { ArmSample } from "./stats";
-import type { Guardrail } from "./plan";
+import type { RolloutEvent, RolloutRecord } from "./record.js";
+import type { Allocation } from "./allocation.js";
+import type { ArmSample } from "./stats.js";
+import type { Guardrail } from "./plan.js";
 
 /**
  * What a flag serves right now, and its revision: a number that goes up every time anyone changes anything

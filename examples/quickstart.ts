@@ -5,7 +5,7 @@ import {
   createMemoryStore,
   standardPlan,
 } from "open-rollout";
-import { simulatedTraffic } from "./simulated-traffic";
+import { simulatedTraffic } from "./simulated-traffic.js";
 
 const flags = createMemoryFlags();
 const notifier = createMemoryNotifier();

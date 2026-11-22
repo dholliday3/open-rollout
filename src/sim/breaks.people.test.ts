@@ -1,8 +1,8 @@
-import { EVERYBODY, NOBODY, measuredStep } from "../allocation";
-import { FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createBench, eventTypes, passTime, recordOf, runFor, send, startedBench, treatmentShare } from "./bench";
+import { EVERYBODY, NOBODY, measuredStep } from "../allocation.js";
+import { FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createBench, eventTypes, passTime, recordOf, runFor, send, startedBench, treatmentShare } from "./bench.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Bench } from "./bench";
-import type { Command } from "../commands";
+import type { Bench } from "./bench.js";
+import type { Command } from "../commands.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

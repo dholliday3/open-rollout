@@ -1,10 +1,10 @@
-import { FIRST_SHARE, FLAG_KEY, SECOND_SHARE, START, createWorld, testPlan } from "./__tests__/world";
-import { acknowledge, applyWrite } from "./write";
+import { FIRST_SHARE, FLAG_KEY, SECOND_SHARE, START, createWorld, testPlan } from "./__tests__/world.js";
+import { acknowledge, applyWrite } from "./write.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Decision } from "./decide";
-import type { World } from "./__tests__/world";
-import { measuredStep } from "./allocation";
-import { newRecord } from "./record";
+import type { Decision } from "./decide.js";
+import type { World } from "./__tests__/world.js";
+import { measuredStep } from "./allocation.js";
+import { newRecord } from "./record.js";
 
 vi.setConfig({ testTimeout: 5000 });
 

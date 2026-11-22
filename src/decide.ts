@@ -1,13 +1,13 @@
-import { NOBODY, sameAllocation } from "./allocation";
-import type { Observation, Time } from "./observation";
-import { expire, guard } from "./guard";
-import { isDone, withEvent } from "./record";
-import { isLateWrite, reconcile, retreat } from "./reconcile";
-import { progress, throughOpenGate } from "./progress";
-import type { Allocation } from "./allocation";
-import type { FlagReading } from "./ports";
-import type { RolloutRecord } from "./record";
-import { usable } from "./observation";
+import { NOBODY, sameAllocation } from "./allocation.js";
+import type { Observation, Time } from "./observation.js";
+import { expire, guard } from "./guard.js";
+import { isDone, withEvent } from "./record.js";
+import { isLateWrite, reconcile, retreat } from "./reconcile.js";
+import { progress, throughOpenGate } from "./progress.js";
+import type { Allocation } from "./allocation.js";
+import type { FlagReading } from "./ports.js";
+import type { RolloutRecord } from "./record.js";
+import { usable } from "./observation.js";
 
 interface FlagWrite {
   readonly allocation: Allocation;
@@ -137,5 +137,5 @@ function decide(record: RolloutRecord, observed: Observation, wallNow: number): 
 }
 
 export type { Decision, FlagWrite };
-export type { Observation } from "./observation";
+export type { Observation } from "./observation.js";
 export { decide };

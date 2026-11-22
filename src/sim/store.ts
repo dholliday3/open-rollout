@@ -1,6 +1,6 @@
-import type { Notifier, RolloutStore, Stored } from "../ports";
-import type { RolloutEvent, RolloutRecord } from "../record";
-import type { Random } from "./random";
+import type { Notifier, RolloutStore, Stored } from "../ports.js";
+import type { RolloutEvent, RolloutRecord } from "../record.js";
+import type { Random } from "./random.js";
 
 /**
  * A rollout store and a notifier that keep everything they were ever given, so the oracle can check what

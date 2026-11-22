@@ -1,7 +1,7 @@
-import type { Allocation } from "./allocation";
-import type { Interval } from "./stats";
-import { NOBODY } from "./allocation";
-import type { RolloutPlan } from "./plan";
+import type { Allocation } from "./allocation.js";
+import type { Interval } from "./stats.js";
+import { NOBODY } from "./allocation.js";
+import type { RolloutPlan } from "./plan.js";
 
 /**
  * Where a rollout is.
@@ -167,10 +167,18 @@ function isDone(record: RolloutRecord): boolean {
   return record.phase === "rolled_back" || record.phase === "released";
 }
 
+/** What an event says. A note with no finding leaves it out of the event, so a record read back from JSON is the same record. */
+interface EventNote {
+  readonly at: number;
+  readonly detail: string;
+  readonly type: EventType;
+  readonly finding?: Finding | undefined;
+}
+
 /** The record with one more event to deliver. */
-function withEvent(record: RolloutRecord, event: Pick<RolloutEvent, "at" | "detail" | "finding" | "type">): RolloutRecord {
+function withEvent(record: RolloutRecord, { finding, ...note }: EventNote): RolloutRecord {
   const eventCount = record.eventCount + 1,
-    full: RolloutEvent = { ...event, flagKey: record.plan.flagKey, key: `${record.id}:${eventCount}`, rolloutId: record.id };
+    full: RolloutEvent = { ...note, ...(finding === undefined ? {} : { finding }), flagKey: record.plan.flagKey, key: `${record.id}:${eventCount}`, rolloutId: record.id };
   return { ...record, eventCount, outbox: [...record.outbox, full].slice(-MAX_OUTBOX) };
 }
 

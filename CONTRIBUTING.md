@@ -13,13 +13,15 @@ pnpm install
 
 ## Checks
 
-CI runs the first three on Node 22 and 24. Run them before you push.
+CI runs the first four on Node 22 and 24. Run them before you push.
 
 | Command | What it does |
 |---|---|
-| `pnpm type-check` | `tsc --noEmit` over `src`, `examples` and the vitest config |
+| `pnpm type-check` | `tsc --noEmit` over `src`, `examples`, `scripts` and the vitest config, under `nodenext` with `exactOptionalPropertyTypes` and `noPropertyAccessFromIndexSignature` |
 | `pnpm lint` | oxlint with every rule category on, type-aware; see `.oxlintrc.json` for the few that are off |
 | `pnpm test` | vitest: unit tests, the examples (including a check that the README's code samples match `examples/`), and a quick pass of the simulation |
+| `pnpm check:package` | Builds and packs the package, installs the tarball into a fresh project (`scripts/package-consumer`), runs it with plain `node` (`import` and `require`), and type-checks a consumer under `nodenext` and `bundler` with TypeScript 5.9 and this repo's. Needs the network |
+| `pnpm build` | Compiles `src` to `dist` (ES modules and `.d.ts`). `pnpm install` runs it, and so does an install from GitHub |
 | `pnpm quickstart` | Runs `examples/quickstart.ts` with tsx |
 | `pnpm sim` | The simulation at full size (`SIM_RUNS=400 SIM_CHAOS_RUNS=1000`). Slow: run it when you change `decide`, the statistics or the controller |
 | `pnpm mutate --mutate <file>` | Stryker mutation testing on one file, such as `pnpm mutate --mutate src/decide.ts`. A whole-package run is slow |
@@ -46,4 +48,6 @@ To replay one chaotic simulation run and print its story, take the seed from the
   `docs/evaluation.md` updated with them.
 - A README code sample is a slice of a file in `examples/`. Change the file and the README together;
   `examples/quickstart.test.ts` fails when they differ.
-- Public API is whatever `src/index.ts` exports. Deep imports into `src/` are not part of it.
+- Public API is whatever the three entry points export: `src/index.ts` (`open-rollout`), `src/posthog.ts`
+  (`open-rollout/posthog`) and `src/tools.ts` (`open-rollout/tools`). Deep imports into `src/` are not part
+  of it. Relative imports end in `.js`, as Node's ES modules need.

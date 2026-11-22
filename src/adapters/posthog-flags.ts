@@ -1,8 +1,8 @@
-import { EVERYBODY, FULL_SHARE, NOBODY, sameAllocation } from "../allocation";
-import type { FlagControl, FlagReading } from "../ports";
-import type { PostHogCall, PostHogTransport } from "./posthog-transport";
-import type { Allocation } from "../allocation";
-import { bodyOf } from "./posthog-transport";
+import { EVERYBODY, FULL_SHARE, NOBODY, sameAllocation } from "../allocation.js";
+import type { FlagControl, FlagReading } from "../ports.js";
+import type { PostHogCall, PostHogTransport } from "./posthog-transport.js";
+import type { Allocation } from "../allocation.js";
+import { bodyOf } from "./posthog-transport.js";
 import { z } from "zod";
 
 /**

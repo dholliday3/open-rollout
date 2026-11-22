@@ -1,8 +1,8 @@
-import { EVERYBODY, FULL_SHARE } from "./allocation";
-import { FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, startRollout, startedWorld, treatmentShare } from "./__tests__/world";
+import { EVERYBODY, FULL_SHARE } from "./allocation.js";
+import { FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, startRollout, startedWorld, treatmentShare } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
-import type { Allocation } from "./allocation";
-import type { World } from "./__tests__/world";
+import type { Allocation } from "./allocation.js";
+import type { World } from "./__tests__/world.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 

@@ -1,8 +1,8 @@
-import type { ArmPair, MetricSnapshot, MetricSource } from "../ports";
-import type { ArmTotals, Totals } from "./units";
-import type { ArmSample } from "../stats";
-import type { Guardrail } from "../plan";
-import type { Pipeline } from "./pipeline";
+import type { ArmPair, MetricSnapshot, MetricSource } from "../ports.js";
+import type { ArmTotals, Totals } from "./units.js";
+import type { ArmSample } from "../stats.js";
+import type { Guardrail } from "../plan.js";
+import type { Pipeline } from "./pipeline.js";
 
 /**
  * The metric source the library reads: the pipeline's counts and a watermark. How the watermark is worked
