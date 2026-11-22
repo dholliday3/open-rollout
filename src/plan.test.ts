@@ -1,6 +1,7 @@
-import { DEFAULT_LIMITS, planProblems, standardPlan, stepAt } from "./plan.js";
+import { DEFAULT_LIMITS, planProblems, stepAt } from "./plan.js";
 import { describe, expect, it, vi } from "vitest";
 import type { RolloutPlan } from "./plan.js";
+import { standardPlan } from "./standard-plan.js";
 import { testPlan } from "./__tests__/world.js";
 
 vi.setConfig({ testTimeout: 5000 });
@@ -8,7 +9,13 @@ vi.setConfig({ testTimeout: 5000 });
 const TOO_BIG = 6000,
   SMALLER = 500,
   [STEP] = testPlan().steps,
-  RISKS = ["low", "medium", "high"] as const;
+  RISKS = ["low", "medium", "high"] as const,
+  HOUR = 3_600_000,
+  STALE_MS = 300_000,
+  STANDARD_PATIENCE = 6,
+  FEW_UNITS = 5,
+  TWO_HOURS = 7_200_000,
+  ERRORS = testPlan().guardrails;
 
 /** A plan as JSON might hold it: the right shape, with a word the types would have refused. */
 function withOddGuardrail(part: Record<string, string>): RolloutPlan {
@@ -105,6 +112,55 @@ describe("checking a plan that came from somewhere untyped", () => {
       policies: Record<string, string>[] = [{ onMetricsOutage: "shrug" }, { onInsufficientData: "shrug" }];
     expect(guardrails.map((part) => planProblems(withOddGuardrail(part)).length)).toStrictEqual([1, 1, 1]);
     expect(policies.map((part) => planProblems(withOddPolicy(part)).length)).toStrictEqual([1, 1]);
+  });
+});
+
+describe("a standard plan for metrics that arrive late", () => {
+  it("moves the staleness limit and every step's deadline out by the source's lag, and passes its own check", () => {
+    expect.hasAssertions();
+    const plan = standardPlan({ flagKey: "f", guardrails: ERRORS, risk: "medium", sourceLagMs: HOUR }),
+      prompt = standardPlan({ flagKey: "f", guardrails: ERRORS, risk: "medium" });
+    expect(plan.limits).toMatchObject({ maxStalenessMs: STALE_MS + HOUR, sourceLagMs: HOUR });
+    expect(plan.steps.map((step) => step.maxDurationMs - step.minDurationMs * STANDARD_PATIENCE)).toStrictEqual([HOUR, HOUR, HOUR, HOUR]);
+    expect(prompt.steps.map((step) => step.maxDurationMs - step.minDurationMs * STANDARD_PATIENCE)).toStrictEqual([0, 0, 0, 0]);
+    expect(planProblems(plan)).toStrictEqual([]);
+  });
+
+  it("is refused when a step gives up before late metrics can cover its watch, or the metrics are always stale", () => {
+    expect.hasAssertions();
+    const late = testPlan({ limits: { ...DEFAULT_LIMITS, sourceLagMs: HOUR } });
+    expect(planProblems(late)).toStrictEqual([
+      "Metrics that run 60 minutes behind are always older than maxStalenessMs, so the rollout would never read them. Make it more than the lag.",
+      "Step 1 gives up before metrics that run 60 minutes behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.",
+      "Step 2 gives up before metrics that run 60 minutes behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.",
+    ]);
+    expect(planProblems({ ...late, guardrails: [] })).toStrictEqual([]);
+    expect(planProblems(testPlan({ limits: { ...DEFAULT_LIMITS, sourceLagMs: -1 } }))).toHaveLength(1);
+  });
+});
+
+describe("a standard plan with overrides", () => {
+  it("sets them on every step, the limits and the policies, keeping the deadline one lag past the patience", () => {
+    expect.hasAssertions();
+    const plan = standardPlan({
+      flagKey: "f",
+      guardrails: ERRORS,
+      overrides: { everyStep: { minDurationMs: TWO_HOURS, minFreshUnits: FEW_UNITS }, limits: { minUnitsToJudge: FEW_UNITS }, onInsufficientData: "rollback" },
+      risk: "low",
+      sourceLagMs: HOUR,
+    });
+    expect(plan.steps.map((step) => [step.minDurationMs, step.maxDurationMs, step.minFreshUnits])).toStrictEqual([
+      [TWO_HOURS, TWO_HOURS * STANDARD_PATIENCE + HOUR, FEW_UNITS],
+      [TWO_HOURS, TWO_HOURS * STANDARD_PATIENCE + HOUR, FEW_UNITS],
+    ]);
+    expect(plan.limits).toMatchObject({ maxStalenessMs: STALE_MS + HOUR, minUnitsToJudge: FEW_UNITS });
+    expect(plan.onInsufficientData).toBe("rollback");
+  });
+
+  it("keeps the standard value for an override set to undefined, and is the plan with none", () => {
+    expect.hasAssertions();
+    const request = { flagKey: "f", guardrails: ERRORS, risk: "medium" } as const;
+    expect(standardPlan({ ...request, overrides: { everyStep: { minFreshUnits: undefined }, limits: { alpha: undefined }, onMetricsOutage: undefined }, sourceLagMs: undefined })).toStrictEqual(standardPlan(request));
   });
 });
 

@@ -8,6 +8,13 @@ import type { RolloutPlan } from "../plan.js";
 import type { RolloutRecord } from "../record.js";
 import { createAutopilot } from "../controller.js";
 
+interface Seen {
+  readonly control: number;
+  readonly treatment: number;
+  readonly controlErrors: number;
+  readonly treatmentErrors: number;
+}
+
 /**
  * A small, exact world for the controller's tests: traffic arrives at a steady rate, splits by whatever the
  * flag serves, and errors at a fixed rate per arm. Nothing is random, so a test can say what must happen.
@@ -23,12 +30,14 @@ interface World {
   /** Units a minute across all traffic. */
   perMinute: number;
   errorRate: ArmPair<number>;
-  /** How far the metrics run behind the clock. */
+  /** How far the metrics run behind the clock: they count what happened up to then, and nothing since. */
   lagMs: number;
   metricsDown: boolean;
   /** Share of the new arm's units that never get counted. */
   lostShare: number;
-  seen: { control: number; treatment: number; controlErrors: number; treatmentErrors: number };
+  seen: Seen;
+  /** The totals at the end of every minute so far, for metrics that are behind. */
+  readonly history: { readonly at: number; readonly seen: Seen }[];
 }
 
 const MINUTE = 60_000,
@@ -44,7 +53,7 @@ const MINUTE = 60_000,
   BASE_ERROR_RATE = 0.02,
   TRAFFIC_PER_MINUTE = 1000,
   START = 1_700_000_000_000,
-  NOTHING_SEEN = { control: 0, controlErrors: 0, treatment: 0, treatmentErrors: 0 };
+  NOTHING_SEEN: Seen = { control: 0, controlErrors: 0, treatment: 0, treatmentErrors: 0 };
 
 function testPlan(overrides: Partial<RolloutPlan> = {}): RolloutPlan {
   const step = { maxDurationMs: PATIENCE_MINUTES * MINUTE, minDurationMs: STEP_MINUTES * MINUTE, minFreshUnits: FRESH_UNITS, requiresApproval: false };
@@ -75,6 +84,7 @@ function createWorld(overrides: Partial<RolloutPlan> = {}): World {
     autopilot: createAutopilot({ flags, metrics, notifier, store }),
     errorRate: { control: BASE_ERROR_RATE, treatment: BASE_ERROR_RATE },
     flags,
+    history: [],
     lagMs: 0,
     lostShare: 0,
     metrics,
@@ -83,19 +93,31 @@ function createWorld(overrides: Partial<RolloutPlan> = {}): World {
     now: START,
     perMinute: TRAFFIC_PER_MINUTE,
     plan: testPlan(overrides),
-    seen: { ...NOTHING_SEEN },
+    seen: NOTHING_SEEN,
     store,
   };
 }
 
+/** The totals the metrics have caught up to: the last minute at or before the watermark. History is in time order. */
+function seenBy(world: World, watermark: number): Seen {
+  let known = NOTHING_SEEN;
+  for (const minute of world.history) {
+    if (minute.at <= watermark) {
+      known = minute.seen;
+    }
+  }
+  return known;
+}
+
 function snapshotOf(world: World): MetricSnapshot {
-  const { seen } = world;
+  const watermark = world.now - world.lagMs,
+    seen = seenBy(world, watermark);
   return {
     asOf: world.now,
     contaminated: 0,
     exposed: { control: seen.control, treatment: seen.treatment },
     metrics: { [METRIC]: { control: { sum: seen.controlErrors, units: seen.control }, treatment: { sum: seen.treatmentErrors, units: seen.treatment } } },
-    watermark: world.now - world.lagMs,
+    watermark,
   };
 }
 
@@ -105,10 +127,13 @@ function passMinute(world: World): void {
     control = (world.perMinute * allocation.control) / FULL_SHARE,
     treatment = ((world.perMinute * allocation.treatment) / FULL_SHARE) * (1 - world.lostShare);
   world.now += MINUTE;
-  world.seen.control += control;
-  world.seen.treatment += treatment;
-  world.seen.controlErrors += control * world.errorRate.control;
-  world.seen.treatmentErrors += treatment * world.errorRate.treatment;
+  world.seen = {
+    control: world.seen.control + control,
+    controlErrors: world.seen.controlErrors + control * world.errorRate.control,
+    treatment: world.seen.treatment + treatment,
+    treatmentErrors: world.seen.treatmentErrors + treatment * world.errorRate.treatment,
+  };
+  world.history.push({ at: world.now, seen: world.seen });
   world.metrics.set(world.metricsDown ? null : snapshotOf(world));
 }
 

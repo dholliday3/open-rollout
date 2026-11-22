@@ -47,7 +47,15 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   it. A plan with no guardrails has no metric source, so its steps are timed on worker clocks alone.
 - **Quiet products.** A step needs `minFreshUnits` new units per arm within `maxDurationMs`. The standard
   medium plan needs about 85 new units a minute across the product; below that its rollouts pause for too
-  little data.
+  little data. `standardPlan({ overrides: { everyStep: { minFreshUnits, minDurationMs } } })` asks for
+  fewer units over longer steps.
+- **Metrics that arrive late.** A step passes only once the metric source's data covers its whole watch,
+  so a source an hour behind (a warehouse loaded hourly) adds an hour to every step, and a regression is
+  seen an hour after it starts. `standardPlan({ sourceLagMs })` gives the staleness limit and every step's
+  deadline that much more room, and `planProblems` refuses a plan whose `limits.sourceLagMs` leaves a step
+  no time. A plan that doesn't know about the lag reads hour-old metrics as stale: it holds where it is and
+  reports `metrics_outage`. Units the previous step exposed in its last `sourceLagMs` count toward the next
+  step's `minFreshUnits`, because the next step's count starts from data that is that far behind.
 
 ## Not verified
 

@@ -1,4 +1,4 @@
-import { FIRST_SHARE, FLAG_KEY, METRIC, START, createWorld, runFor, treatmentShare } from "./__tests__/world.js";
+import { FIRST_SHARE, FLAG_KEY, METRIC, START, createWorld, recordOf, runFor, treatmentShare } from "./__tests__/world.js";
 import type { RolloutTools, ToolCall } from "./tools.js";
 import { describe, expect, it, vi } from "vitest";
 import type { World } from "./__tests__/world.js";
@@ -8,6 +8,8 @@ vi.setConfig({ testTimeout: 10_000 });
 
 const BROKEN = 0.5,
   A_WHILE = 5,
+  HOUR = 3_600_000,
+  FEW_UNITS = 5,
   STANDARD_FIRST_SHARE = 1000,
   START_INPUT: Parameters<RolloutTools["rollout_start"]["run"]>[0] = { flagKey: FLAG_KEY, guardrails: [{ direction: "lower_is_better", kind: "rate", metric: METRIC, onRegression: "rollback", tolerance: 0 }], id: "rollout-1", risk: "low" };
 
@@ -52,6 +54,29 @@ describe("the agent's rollout tools", () => {
     const status = await tools.rollout_status.run({ id: "rollout-1" }, call(world, "call-1"));
     expect(status.rollout?.guardrails).toMatchObject([{ metric: METRIC, onNewBehaviour: BROKEN, onOldBehaviour: 0, worse: true }]);
     expect(status.rollout?.headline).toContain("Paused");
+  });
+});
+
+describe("the agent's rollout tools, planning for metrics that are slow or thin", () => {
+  it("plans for metrics that arrive late, with the agent's changes to the standard plan", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      answer = await rolloutTools(world.autopilot).rollout_start.run({ ...START_INPUT, overrides: { everyStep: { minFreshUnits: FEW_UNITS }, onInsufficientData: "rollback" }, sourceLagMs: HOUR }, call(world, "call-1")),
+      { plan } = await recordOf(world);
+    expect(answer).toMatchObject({ ok: true });
+    expect(plan.limits.sourceLagMs).toBe(HOUR);
+    expect(plan.steps.map((step) => step.minFreshUnits)).toStrictEqual([FEW_UNITS, FEW_UNITS]);
+    expect(plan.onInsufficientData).toBe("rollback");
+  });
+
+  it("refuses a lag or an override of the wrong kind before it runs, and says why a plan the overrides spoil can't start", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      tool = rolloutTools(world.autopilot).rollout_start;
+    expect(tool.inputSchema.safeParse({ ...START_INPUT, sourceLagMs: -1 }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ ...START_INPUT, overrides: { onMetricsOutage: "shrug" } }).success).toBe(false);
+    await expect(tool.run({ ...START_INPUT, overrides: { everyStep: { maxDurationMs: 1 } }, sourceLagMs: HOUR }, call(world, "call-1"))).resolves.toMatchObject({ ok: false });
+    expect(treatmentShare(world)).toBe(0);
   });
 });
 

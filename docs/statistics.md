@@ -83,7 +83,7 @@ Units seen on both arms (identities that merged at login) are left out of both. 
 
 Each step needs `minFreshUnits` new units on each arm within its `maxDurationMs`. The standard medium plan
 starts at 1% a side and asks for 50 new units a side within an hour, which is about 85 new units a minute
-across the whole product. Below that, lower `minFreshUnits`, lengthen the steps, start at a larger share,
-or pick a busier unit. In simulation, on a product with 25 visits a minute, a doubled error rate was
-caught in none of 100 rollouts: they paused for too little data, which is what the standard plans do
-instead of rolling back.
+across the whole product. Below that, lower `minFreshUnits`, lengthen the steps (`standardPlan`'s
+`overrides.everyStep` does both), start at a larger share, or pick a busier unit. In simulation, on a
+product with 25 visits a minute, a doubled error rate was caught in none of 100 rollouts: they paused for
+too little data, which is what the standard plans do instead of rolling back.

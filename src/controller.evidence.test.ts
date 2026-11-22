@@ -1,7 +1,9 @@
 import { FIRST_SHARE, METRIC, MINUTE, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, snapshotOf, startRollout, startedWorld, treatmentShare } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
+import { FULL_SHARE } from "./allocation.js";
 import type { MetricSnapshot } from "./ports.js";
 import type { World } from "./__tests__/world.js";
+import { standardPlan } from "./standard-plan.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 
@@ -10,7 +12,27 @@ const STEP_AND_A_BIT = 13,
   PAST_PATIENCE = 70,
   A_WHILE = 5,
   BLIND_TOO_LONG = 20,
-  THREE_WEEKS_AND_A_DAY = 31_680;
+  THREE_WEEKS_AND_A_DAY = 31_680,
+  MINUTES_IN_AN_HOUR = 60,
+  HOUR = MINUTES_IN_AN_HOUR * MINUTE,
+  /** Two low-risk steps, each watched ten minutes on data that arrives an hour late, and the release. */
+  TWO_LATE_STEPS = 160,
+  /** An hour for the data to arrive, and a few minutes for the guardrail to be sure. */
+  LATE_REGRESSION = 75,
+  BROKEN = 0.5;
+
+/** A world whose metrics count everything an hour late, and a low-risk standard plan for it. */
+function lateWorld(sourceLagMs?: number): { world: World; start: () => Promise<void> } {
+  const world = createWorld(),
+    plan = standardPlan({ flagKey: world.plan.flagKey, guardrails: world.plan.guardrails, risk: "low", sourceLagMs });
+  world.lagMs = HOUR;
+  return {
+    start: async () => {
+      await world.autopilot.start({ id: ROLLOUT_ID, now: world.now, plan });
+    },
+    world,
+  };
+}
 
 describe("a rollout without evidence", () => {
   it("does not move on while no new units arrive, however long it waits", async () => {
@@ -78,6 +100,37 @@ describe("a rollout whose evidence is late or gone", () => {
     await runFor(world, 2);
     expect((await recordOf(world)).outcome?.reason).toBe("expired");
     expect(treatmentShare(world)).toBe(0);
+  });
+});
+
+describe("a rollout on metrics that arrive an hour late", () => {
+  it("releases healthy code when its plan allows for the lag", async () => {
+    expect.hasAssertions();
+    const { start, world } = lateWorld(HOUR);
+    await start();
+    await runFor(world, TWO_LATE_STEPS);
+    expect(eventTypes(world)).toStrictEqual(["started", "step_started", "step_started", "releasing", "released"]);
+    expect(treatmentShare(world)).toBe(FULL_SHARE);
+  });
+
+  it("rolls back broken code at its first step, once the late data shows it", async () => {
+    expect.hasAssertions();
+    const { start, world } = lateWorld(HOUR);
+    world.errorRate = { control: 0, treatment: BROKEN };
+    await start();
+    await runFor(world, LATE_REGRESSION);
+    expect((await recordOf(world)).outcome?.reason).toBe("regression");
+    expect(eventTypes(world).filter((type) => type === "step_started")).toHaveLength(1);
+    expect(treatmentShare(world)).toBe(0);
+  });
+
+  it("holds at its first step when the plan doesn't know about the lag, taking hour-old metrics for an outage", async () => {
+    expect.hasAssertions();
+    const { start, world } = lateWorld();
+    await start();
+    await runFor(world, TWO_LATE_STEPS);
+    expect(eventTypes(world)).toContain("metrics_outage");
+    expect(treatmentShare(world)).toBe(FIRST_SHARE);
   });
 });
 

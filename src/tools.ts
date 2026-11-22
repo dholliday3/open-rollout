@@ -1,8 +1,8 @@
 import type { Autopilot, CommandOutcome } from "./controller.js";
+import type { Guardrail, Limits } from "./plan.js";
 import type { Command } from "./commands.js";
-import type { Guardrail } from "./plan.js";
 import type { RolloutSummary } from "./summary.js";
-import { standardPlan } from "./plan.js";
+import { standardPlan } from "./standard-plan.js";
 import { summarize } from "./summary.js";
 import { z } from "zod";
 
@@ -46,11 +46,41 @@ const idShape = z.string().min(1).describe("The rollout's id."),
     onRegression: z.enum(["rollback", "pause"]).default("rollback"),
     mustRuleOut: z.number().positive().optional().describe("How large a regression must be ruled out before a step may pass, in the metric's own units. Leave out to pass a step when nothing was detected."),
   }),
+  durationShape = z.number().int().positive(),
+  everyStepShape = z.object({
+    minDurationMs: durationShape.optional().describe("The least time each step is watched."),
+    maxDurationMs: durationShape.optional().describe("When a step still short of traffic gives up. Left out, six times its watch plus the source's lag."),
+    minFreshUnits: z.number().int().min(0).optional().describe("New units each arm must gain during a step. Lower it for a product with few people or accounts."),
+    requiresApproval: z.boolean().optional().describe("Ask a person before every step."),
+  }),
+  // Every limit but the lag, which is its own input so the deadlines move with it; `satisfies` fails when Limits changes.
+  limitsShape = z.object({
+    alpha: z.number().optional(),
+    tuneAtUnits: z.number().optional(),
+    sampleRatioAlpha: z.number().optional(),
+    minUnitsToJudge: z.number().optional(),
+    maxStalenessMs: z.number().optional(),
+    maxBlindMs: z.number().optional(),
+    propagationMs: z.number().optional(),
+    expireAfterIdleMs: z.number().optional(),
+    settleMs: z.number().optional(),
+    maxContaminatedShare: z.number().optional(),
+  } satisfies Record<keyof Omit<Limits, "sourceLagMs">, z.ZodOptional<z.ZodNumber>>),
+  overridesShape = z.object({
+    everyStep: everyStepShape.optional().describe("Set on every step of the standard ladder."),
+    limits: limitsShape.optional().describe("The plan's limits by name, each replacing the standard value. Rarely needed."),
+    onInsufficientData: z.enum(["rollback", "pause"]).optional().describe("What a step that never gets enough traffic does. Standard: pause."),
+    onMetricsOutage: z.enum(["hold", "rollback"]).optional().describe("What the rollout does when the metrics are down for too long. Standard: hold."),
+    onSampleRatioMismatch: z.enum(["rollback", "pause"]).optional().describe("What uneven arms do. Standard: rollback."),
+    requiresApprovalToRelease: z.boolean().optional().describe("Ask a person before the release to everybody. Standard: only for high risk."),
+  }),
   startShape = z.object({
     id: idShape,
     flagKey: z.string().min(1).describe("The feature flag to roll out."),
     risk: z.enum(["low", "medium", "high"]).describe("How much could go wrong. Higher risk means smaller first steps, longer watches, and approval before the release."),
     guardrails: z.array(guardrailShape).describe("The metrics the rollout must not make worse. With none, it is a timed ramp with no automatic rollback."),
+    sourceLagMs: z.number().int().min(0).optional().describe("How far behind the clock the metrics run, in milliseconds, such as 3600000 for a warehouse loaded hourly. Every step gets that much longer before it gives up. Leave out when the metrics are minutes behind at most."),
+    overrides: overridesShape.optional().describe("Changes to the standard plan, for a product with little traffic or a team with its own rules."),
   }),
   targetShape = z.object({ id: idShape }),
   notedShape = z.object({ id: idShape, note: noteShape }),
@@ -81,7 +111,7 @@ function guardrailOf({ mustRuleOut, ...guardrail }: z.infer<typeof guardrailShap
 }
 
 async function begin(autopilot: Autopilot, input: z.infer<typeof startShape>, call: ToolCall): Promise<ToolAnswer> {
-  const plan = standardPlan({ flagKey: input.flagKey, guardrails: input.guardrails.map((guardrail) => guardrailOf(guardrail)), risk: input.risk }),
+  const plan = standardPlan({ flagKey: input.flagKey, guardrails: input.guardrails.map((guardrail) => guardrailOf(guardrail)), overrides: input.overrides, risk: input.risk, sourceLagMs: input.sourceLagMs }),
     result = await autopilot.start({ id: input.id, now: call.now, plan }),
     said = await answer(autopilot, input.id, { message: result.status === "started" ? "The rollout has started." : result.problems.join(" "), ok: result.status === "started" });
   return said;

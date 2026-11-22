@@ -34,7 +34,8 @@ To replay one chaotic simulation run and print its story, take the seed from the
 - `src/decide.ts` is the pure core: `decide(record, observation, now)` returns the next record and at most
   one flag write. `guard.ts`, `progress.ts`, `reconcile.ts` and `transitions.ts` are its parts.
 - `src/controller.ts` runs ticks and commands over the four ports in `src/ports.ts`.
-- `src/stats.ts` and `src/judge.ts` are the statistics; `src/plan.ts` the plans and their defaults.
+- `src/stats.ts` and `src/judge.ts` are the statistics; `src/plan.ts` the plans, their defaults and checks;
+  `src/standard-plan.ts` the standard ladders.
 - `src/adapters/` has the in-memory and PostHog adapters; `src/tools.ts` the agent tools; `src/release.ts`
   releases across environments.
 - `src/sim/` is the simulated production that attacks the guarantees in `docs/guarantees.md`.

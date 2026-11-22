@@ -56,6 +56,12 @@ interface Limits {
   readonly settleMs: number;
   /** Share of units seen on both arms above which the comparison is void. */
   readonly maxContaminatedShare: number;
+  /**
+   * How far behind the clock the metric source's data runs, such as a warehouse loaded every hour. A step
+   * can only pass once its whole watch is in that data, so `planProblems` checks that `maxStalenessMs` and
+   * every step's `maxDurationMs` leave room for it; `standardPlan({ sourceLagMs })` sizes both. Left out, 0.
+   */
+  readonly sourceLagMs?: number;
 }
 
 interface RolloutPlan {
@@ -69,19 +75,7 @@ interface RolloutPlan {
   readonly limits: Limits;
 }
 
-/** How much could go wrong; a riskier change gets smaller first steps, longer watches and a person at the end. */
-type Risk = "low" | "medium" | "high";
-
-interface PlanRequest {
-  readonly flagKey: string;
-  readonly guardrails: readonly Guardrail[];
-  readonly risk: Risk;
-}
-
 const MS_PER_MINUTE = 60_000,
-  /** How much longer than its minimum a step may wait for traffic. */
-  PATIENCE = 6,
-  DEFAULT_FRESH_UNITS = 50,
   KINDS: ReadonlySet<string> = new Set(["rate", "mean", "ratio"]),
   DIRECTIONS: ReadonlySet<string> = new Set(["lower_is_better", "higher_is_better"]),
   REACTIONS: ReadonlySet<string> = new Set(["rollback", "pause"]),
@@ -104,28 +98,10 @@ const MS_PER_MINUTE = 60_000,
     propagationMs: MS_PER_MINUTE,
     sampleRatioAlpha: 0.001,
     settleMs: SETTLE_MS,
+    sourceLagMs: 0,
     tuneAtUnits: 1000,
-  },
-  /** Shares in basis points and minutes watched, by risk. */
-  LADDERS: Record<Risk, readonly { share: number; minutes: number }[]> = {
-    high: [
-      { minutes: 30, share: 100 },
-      { minutes: 30, share: 500 },
-      { minutes: 60, share: 1000 },
-      { minutes: 120, share: 2500 },
-      { minutes: 240, share: HALF_SHARE },
-    ],
-    low: [
-      { minutes: 10, share: 1000 },
-      { minutes: 10, share: HALF_SHARE },
-    ],
-    medium: [
-      { minutes: 10, share: 100 },
-      { minutes: 15, share: 1000 },
-      { minutes: 15, share: 2500 },
-      { minutes: 20, share: HALF_SHARE },
-    ],
   };
+
 
 /** True for a real number at or above `least`. NaN and Infinity are never amounts. */
 function isAmount(value: number, least = 0): boolean {
@@ -173,13 +149,36 @@ function guardrailProblems(guardrails: readonly Guardrail[]): string[] {
   return new Set(names).size === names.length ? problems : [...problems, "Each metric can guard a rollout once."];
 }
 
+function minutes(ms: number): string {
+  return `${ms / MS_PER_MINUTE} minutes`;
+}
+
+/**
+ * A step passes once the metrics have caught up with its whole watch, which takes the source's lag longer
+ * than the watch itself. Metrics older than the staleness limit are never read, and a step past its
+ * deadline gives up, so both have to leave room for the lag.
+ */
+function lagProblems(plan: RolloutPlan): string[] {
+  const lag = plan.limits.sourceLagMs ?? 0;
+  if (!isAmount(lag, 1) || plan.guardrails.length === 0) {
+    return [];
+  }
+  const stale = plan.limits.maxStalenessMs > lag ? [] : [`Metrics that run ${minutes(lag)} behind are always older than maxStalenessMs, so the rollout would never read them. Make it more than the lag.`];
+  return [
+    ...stale,
+    ...plan.steps.flatMap((step, index) =>
+      step.maxDurationMs - step.minDurationMs > lag ? [] : [`Step ${index + 1} gives up before metrics that run ${minutes(lag)} behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.`],
+    ),
+  ];
+}
+
 function isErrorRate(value: number): boolean {
   return value > 0 && value < MAX_ERROR_RATE;
 }
 
 function limitProblems(limits: Limits): string[] {
   const problems: string[] = [],
-    times = [limits.maxStalenessMs, limits.maxBlindMs, limits.propagationMs, limits.expireAfterIdleMs, limits.settleMs];
+    times = [limits.maxStalenessMs, limits.maxBlindMs, limits.propagationMs, limits.expireAfterIdleMs, limits.settleMs, limits.sourceLagMs ?? 0];
   if (!isErrorRate(limits.alpha) || !isErrorRate(limits.sampleRatioAlpha)) {
     problems.push("An error rate must be above 0 and below 0.5.");
   }
@@ -235,29 +234,8 @@ function samePlan(left: RolloutPlan, right: RolloutPlan): boolean {
 /** Everything wrong with a plan, in words a person can fix; empty when it can run. */
 function planProblems(plan: RolloutPlan): string[] {
   const named = plan.flagKey === "" ? ["A plan names its flag."] : [];
-  return [...named, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...policyProblems(plan)];
+  return [...named, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...lagProblems(plan), ...policyProblems(plan)];
 }
 
-/** A plan with the usual ladder for a change of this risk. */
-function standardPlan(request: PlanRequest): RolloutPlan {
-  return {
-    flagKey: request.flagKey,
-    guardrails: request.guardrails,
-    limits: DEFAULT_LIMITS,
-    // LaunchDarkly rolls back a step that never gets its sample. Here a quiet night would undo every rollout, so a person is asked instead.
-    onInsufficientData: "pause",
-    onMetricsOutage: "hold",
-    onSampleRatioMismatch: "rollback",
-    requiresApprovalToRelease: request.risk === "high",
-    steps: LADDERS[request.risk].map((rung) => ({
-      maxDurationMs: rung.minutes * MS_PER_MINUTE * PATIENCE,
-      minDurationMs: rung.minutes * MS_PER_MINUTE,
-      minFreshUnits: DEFAULT_FRESH_UNITS,
-      requiresApproval: false,
-      treatmentShare: rung.share,
-    })),
-  };
-}
-
-export type { Direction, Guardrail, Limits, PlanRequest, Risk, RolloutPlan, Step };
-export { DEFAULT_LIMITS, isStepOf, planProblems, samePlan, standardPlan, stepAt };
+export type { Direction, Guardrail, Limits, RolloutPlan, Step };
+export { DEFAULT_LIMITS, isStepOf, planProblems, samePlan, stepAt };

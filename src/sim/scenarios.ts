@@ -5,7 +5,7 @@ import type { EffectName } from "./effects.js";
 import type { Scenario } from "./montecarlo.js";
 import type { Scripted } from "./driver.js";
 import type { World } from "./world.js";
-import { standardPlan } from "../plan.js";
+import { standardPlan } from "../standard-plan.js";
 
 /**
  * The scenarios the statistics are measured on. Healthy ones (the new code changes nothing) measure how

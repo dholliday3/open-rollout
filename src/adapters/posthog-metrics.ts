@@ -26,7 +26,7 @@ interface PostHogMetricsOptions {
   readonly transport: PostHogTransport;
   /** The caller's clock, in milliseconds. */
   readonly now: () => number;
-  /** How far behind the clock PostHog's events can be trusted to be complete. */
+  /** How far behind the clock PostHog's events can be trusted to be complete. Past a few minutes, plan with it as `sourceLagMs`. */
   readonly ingestionLagMs: number;
   /** Each guardrail's metric name, and the events behind it. */
   readonly metrics: Readonly<Record<string, MetricDefinition>>;
