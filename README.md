@@ -59,13 +59,24 @@ const traffic = simulatedTraffic({
   metric: "errors",
   errorRate: { control: 0.02, treatment: 0.02 },
 });
-const autopilot = createAutopilot({ flags, metrics: traffic, notifier, store: createMemoryStore() });
+const autopilot = createAutopilot({
+  flags,
+  metrics: traffic,
+  notifier,
+  store: createMemoryStore(),
+});
 
 const plan = standardPlan({
   flagKey: "new-checkout",
   risk: "low",
   guardrails: [
-    { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" },
+    {
+      metric: "errors",
+      kind: "rate",
+      direction: "lower_is_better",
+      tolerance: 0,
+      onRegression: "rollback",
+    },
   ],
 });
 await autopilot.start({ id: "checkout-1", plan, now: traffic.now() });
@@ -95,12 +106,11 @@ at 10%. Run it yourself with `pnpm quickstart` ([`examples/quickstart.ts`](examp
 
 ```mermaid
 flowchart LR
-  start([start]) --> ramping
-  ramping -->|every step passed| releasing --> released([released])
-  ramping -->|a guardrail got worse| rolling_back --> rolled_back([rolled back])
-  ramping -->|too little data, or a person| paused
-  paused -->|resume| ramping
-  ramping -->|plan needs a yes| awaiting_approval -->|approve| releasing
+  start([Start]) --> s1["Step 1<br/>10% new, 10% old"]
+  s1 -->|no worse| s2["Step 2<br/>50% new, 50% old"]
+  s2 -->|no worse| done([Everyone gets the new code])
+  s1 -->|worse| back([Rolled back])
+  s2 -->|worse| back
 ```
 
 1. **Pick a plan.** A plan is the list of steps and the metrics to guard.

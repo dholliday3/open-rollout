@@ -15,13 +15,24 @@ const traffic = simulatedTraffic({
   metric: "errors",
   errorRate: { control: 0.02, treatment: 0.02 },
 });
-const autopilot = createAutopilot({ flags, metrics: traffic, notifier, store: createMemoryStore() });
+const autopilot = createAutopilot({
+  flags,
+  metrics: traffic,
+  notifier,
+  store: createMemoryStore(),
+});
 
 const plan = standardPlan({
   flagKey: "new-checkout",
   risk: "low",
   guardrails: [
-    { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" },
+    {
+      metric: "errors",
+      kind: "rate",
+      direction: "lower_is_better",
+      tolerance: 0,
+      onRegression: "rollback",
+    },
   ],
 });
 await autopilot.start({ id: "checkout-1", plan, now: traffic.now() });
