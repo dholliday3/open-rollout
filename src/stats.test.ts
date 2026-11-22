@@ -1,6 +1,6 @@
 import type { ArmSample, Interval, MetricKind, SequenceTuning } from "./stats.js";
 import { describe, expect, it, vi } from "vitest";
-import { differenceInterval, estimateArm, isSampleRatioMismatch } from "./stats.js";
+import { differenceInterval, estimateArm, estimateArms, isSampleRatioMismatch } from "./stats.js";
 import type { Random } from "./sim/random.js";
 import { createRandom } from "./sim/random.js";
 
@@ -64,9 +64,8 @@ function sampleOf(totals: Totals): ArmSample {
 }
 
 function intervalOf(kind: MetricKind, control: Totals, treatment: Totals): Interval | null {
-  const before = estimateArm(kind, sampleOf(control)),
-    after = estimateArm(kind, sampleOf(treatment));
-  return before === null || after === null ? null : differenceInterval(before, after, TUNING);
+  const estimates = estimateArms(kind, { control: sampleOf(control), treatment: sampleOf(treatment) });
+  return estimates === null ? null : differenceInterval(estimates.control, estimates.treatment, TUNING);
 }
 
 function calledWorse(kind: MetricKind, control: Totals, treatment: Totals): boolean {
@@ -206,9 +205,18 @@ describe("a guardrail's call on little data", () => {
 
   it("has no estimate for one unit, or for a ratio with nothing under the line", () => {
     expect.hasAssertions();
+    const nothingUnder = { denominator: { crossSum: 0, sum: 0, sumSquares: 0 }, sum: 0, sumSquares: 0, units: TEN };
     expect(estimateArm("mean", { sum: 1, sumSquares: 1, units: 1 })).toBeNull();
-    expect(estimateArm("ratio", { denominator: { crossSum: 0, sum: 0, sumSquares: 0 }, sum: 0, sumSquares: 0, units: TEN })).toBeNull();
-    expect(estimateArm("ratio", { sum: 0, units: TEN })).toBeNull();
+    expect(estimateArms("ratio", { control: nothingUnder, treatment: nothingUnder })).toBeNull();
+    expect(estimateArms("ratio", { control: sampleOf({ ...NOTHING, units: TEN }), treatment: { sum: 0, sumSquares: 0, units: TEN } })).toBeNull();
+  });
+
+  it("has no ratio from one arm alone, whose spread needs the ratio both arms share", () => {
+    expect.hasAssertions();
+    const arm = sampleOf({ crossSum: THREE, denominatorSquares: THIRTY, denominatorSum: TEN, sum: THREE, sumSquares: THREE, units: TEN });
+    // @ts-expect-error A ratio is estimated from both arms, by estimateArms; around one arm's own ratio it cries wolf.
+    expect(estimateArm("ratio", arm)).toBeNull();
+    expect(estimateArms("ratio", { control: arm, treatment: arm })).not.toBeNull();
   });
 });
 

@@ -29,10 +29,13 @@ interface ToolAnswer {
   readonly rollout: RolloutSummary | null;
 }
 
+/** A tool's zod 4 input schema, named here so code that infers one needn't reach zod through this package. */
+type ToolSchema<Input> = z.ZodType<Input>;
+
 /** One tool: what the model reads, what it must send, and what happens. */
 interface RolloutTool<Input> {
   readonly description: string;
-  readonly inputSchema: z.ZodType<Input>;
+  readonly inputSchema: ToolSchema<Input>;
   readonly run: (input: Input, call: ToolCall) => Promise<ToolAnswer>;
 }
 
@@ -256,5 +259,5 @@ function rolloutTools(autopilot: Autopilot, options: RolloutToolsOptions = {}): 
   };
 }
 
-export type { Authorization, RolloutTool, RolloutTools, RolloutToolsOptions, ToolAnswer, ToolCall, ToolRequest };
+export type { Authorization, RolloutTool, RolloutTools, RolloutToolsOptions, ToolAnswer, ToolCall, ToolRequest, ToolSchema };
 export { rolloutTools };

@@ -103,6 +103,8 @@ interface Outcome {
  * load it and carry on, and a worker acts only on what it managed to save here.
  */
 interface RolloutRecord {
+  /** The record's shape, `RECORD_SCHEMA_VERSION` of the package that made it, so a store can tell an older record from a newer one. */
+  readonly schemaVersion: number;
   readonly id: string;
   readonly plan: RolloutPlan;
   readonly phase: Phase;
@@ -157,7 +159,9 @@ interface RolloutRecord {
   readonly settled: boolean;
 }
 
-const MAX_OUTBOX = 100;
+const MAX_OUTBOX = 100,
+  /** Goes up when a release changes what a record holds in a way an older record can't be read as. */
+  RECORD_SCHEMA_VERSION = 1;
 
 function isLive(record: RolloutRecord): boolean {
   return record.phase === "ramping" || record.phase === "awaiting_approval" || record.phase === "paused";
@@ -214,6 +218,7 @@ function newRecord(id: string, plan: RolloutPlan, now: number): RolloutRecord {
     phase: "awaiting_approval",
     plan,
     releaseAnnounced: false,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     seenRevision: null,
     settled: false,
     startedAt: now,
@@ -223,4 +228,4 @@ function newRecord(id: string, plan: RolloutPlan, now: number): RolloutRecord {
 }
 
 export type { Baseline, CommandEntry, EventType, Finding, Gate, Outcome, Pause, PauseReason, Phase, RollbackReason, RolloutEvent, RolloutRecord, WriteAttempt };
-export { isDone, isLive, newRecord, withCommand, withEvent };
+export { RECORD_SCHEMA_VERSION, isDone, isLive, newRecord, withCommand, withEvent };

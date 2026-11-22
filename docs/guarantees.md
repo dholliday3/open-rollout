@@ -131,6 +131,8 @@ CREATE UNIQUE INDEX rollouts_one_unsettled_per_flag ON rollouts (flag_key) WHERE
 --            WHERE id = $3 AND version = $4   -- and it won when one row changed.
 ```
 
-`listUnsettled` is `SELECT id FROM rollouts WHERE NOT settled`. A plan that has been through a `jsonb`
-column comes back with its keys reordered and without any key that was set to `undefined`; `start`
-compares plans as JSON keeps them, so a retried start still finds its own rollout.
+`listUnsettled` is `SELECT id FROM rollouts WHERE NOT settled`. Every record carries `schemaVersion`, the
+`RECORD_SCHEMA_VERSION` of the package that made it, so a store can refuse a record from another version
+rather than hand it to code that reads it wrong; the package itself does not check it. A plan that has
+been through a `jsonb` column comes back with its keys reordered and without any key that was set to
+`undefined`; `start` compares plans as JSON keeps them, so a retried start still finds its own rollout.

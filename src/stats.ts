@@ -118,7 +118,7 @@ function meanEstimate(sample: ArmSample): Estimate {
  * `around` is the ratio the residuals are taken from. Taken from the arm's own ratio, an arm where one or
  * two people make most of the requests fits its ratio to them and reports almost no spread, and healthy
  * code is called worse twice as often as it should be. Taken from the ratio both arms share when nothing
- * has changed, it can't, and an arm with no events yet still has a spread.
+ * has changed, it can't, and an arm with no events yet still has a spread. Only `estimateArms` has both arms.
  */
 function ratioEstimate(sample: ArmSample, denominator: DenominatorSample, around: number): Estimate | null {
   if (denominator.sum <= 0) {
@@ -129,27 +129,35 @@ function ratioEstimate(sample: ArmSample, denominator: DenominatorSample, around
   return { units, value: sum / denominator.sum, variance: residualSquares / (denominator.sum * denominator.sum) };
 }
 
-function estimateOf(kind: MetricKind, sample: ArmSample, around: number): Estimate | null {
+function estimateOf(kind: MetricKind, sample: ArmSample, around: number | undefined): Estimate | null {
   if (kind === "rate") {
     return rateEstimate(sample);
   }
   if (kind === "mean") {
     return meanEstimate(sample);
   }
-  return sample.denominator === undefined ? null : ratioEstimate(sample, sample.denominator, around);
+  return sample.denominator === undefined || around === undefined ? null : ratioEstimate(sample, sample.denominator, around);
 }
 
-/**
- * A metric's value on one arm, or null while the arm has too little to estimate a variance from, or when
- * its totals can't be a measurement. No estimate is never read as healthy and never as worse. For a ratio,
- * `around` is the ratio to take the spread from; left out, it is the arm's own.
- */
-function estimateArm(kind: MetricKind, sample: ArmSample, around?: number): Estimate | null {
+/** One arm's value, a ratio's spread taken around `around`. A ratio with nothing to take it around has none. */
+function estimateOne(kind: MetricKind, sample: ArmSample, around?: number): Estimate | null {
   if (sample.units < MIN_UNITS_FOR_VARIANCE || sampleProblem(kind, sample) !== null) {
     return null;
   }
-  const estimate = estimateOf(kind, sample, around ?? sample.sum / (sample.denominator?.sum ?? 1));
+  const estimate = estimateOf(kind, sample, around);
   return estimate !== null && Number.isFinite(estimate.value) && Number.isFinite(estimate.variance) ? estimate : null;
+}
+
+/**
+ * A rate's or a mean's value on one arm, or null while the arm has too little to estimate a variance from,
+ * or when its totals can't be a measurement. No estimate is never read as healthy and never as worse.
+ *
+ * A ratio has no estimate from one arm alone (a JavaScript caller that asks gets null): its spread has to be
+ * taken around the ratio both arms share, or healthy code is called worse about twice as often as `alpha`
+ * allows. `estimateArms` does that.
+ */
+function estimateArm(kind: "rate" | "mean", sample: ArmSample): Estimate | null {
+  return estimateOne(kind, sample);
 }
 
 /** The ratio both arms share when nothing has changed: every unit's total over every unit's total. */
@@ -157,11 +165,14 @@ function sharedRatio(control: ArmSample, treatment: ArmSample): number {
   return (control.sum + treatment.sum) / ((control.denominator?.sum ?? 0) + (treatment.denominator?.sum ?? 0));
 }
 
-/** Both arms' values for a metric, ready to compare, or null while either can't be estimated. */
-function estimateArms(kind: MetricKind, arms: { control: ArmSample; treatment: ArmSample }): { control: Estimate; treatment: Estimate } | null {
+/**
+ * Both arms' values for a metric, ready for `differenceInterval`, or null while either can't be estimated.
+ * A ratio's spreads are taken around the ratio both arms share, as the guardrails take them.
+ */
+function estimateArms(kind: MetricKind, arms: { readonly control: ArmSample; readonly treatment: ArmSample }): { control: Estimate; treatment: Estimate } | null {
   const around = kind === "ratio" ? sharedRatio(arms.control, arms.treatment) : undefined,
-    control = estimateArm(kind, arms.control, around),
-    treatment = estimateArm(kind, arms.treatment, around);
+    control = estimateOne(kind, arms.control, around),
+    treatment = estimateOne(kind, arms.treatment, around);
   return control === null || treatment === null ? null : { control, treatment };
 }
 

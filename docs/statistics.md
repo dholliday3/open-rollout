@@ -50,6 +50,10 @@ total outage was caught on a ratio in a median 28 minutes with 105 people expose
 So guard an outage with a `rate` (people with an error) as well as any `ratio`, and where one unit can hold
 most of what is under the line, cap each unit's contribution in the metric source.
 
+To compare two arms outside a rollout, `estimateArms(kind, { control, treatment })` gives both estimates for
+`differenceInterval`, a ratio's spreads taken around the shared ratio as the guardrails take them.
+`estimateArm` takes a rate or a mean only: one arm alone has no shared ratio to take a ratio's spread from.
+
 A ratio whose events show up on the new arm with nothing under the line at all (the new code fails before
 a request is counted) is acted on as a regression, not waited out as too little traffic.
 

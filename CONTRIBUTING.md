@@ -20,7 +20,7 @@ CI runs the first four on Node 22 and 24. Run them before you push.
 | `pnpm type-check` | `tsc --noEmit` over `src`, `examples`, `scripts` and the vitest config, under `nodenext` with `exactOptionalPropertyTypes` and `noPropertyAccessFromIndexSignature` |
 | `pnpm lint` | oxlint with every rule category on, type-aware; see `.oxlintrc.json` for the few that are off |
 | `pnpm test` | vitest: unit tests, the examples (including a check that the README's code samples match `examples/`), and a quick pass of the simulation |
-| `pnpm check:package` | Builds and packs the package, installs the tarball into a fresh project (`scripts/package-consumer`), runs it with plain `node` (`import` and `require`), and type-checks a consumer under `nodenext` and `bundler` with TypeScript 5.9 and this repo's. Needs the network |
+| `pnpm check:package` | Builds and packs the package, installs the tarball into a fresh project (`scripts/package-consumer`), runs it with plain `node` (`import` and `require`), and type-checks a consumer under `nodenext` and `bundler` with TypeScript 5.9 and this repo's, emitting declarations for a store written over the record type, so a type the public API reaches but doesn't export fails it (TS2742). Needs the network |
 | `pnpm build` | Compiles `src` to `dist` (ES modules and `.d.ts`). `pnpm install` runs it, and so does an install from GitHub |
 | `pnpm quickstart` | Runs `examples/quickstart.ts` with tsx |
 | `pnpm sim` | The simulation at full size (`SIM_RUNS=400 SIM_CHAOS_RUNS=1000`). Slow: run it when you change `decide`, the statistics or the controller |

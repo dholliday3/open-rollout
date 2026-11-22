@@ -1,8 +1,12 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
-    "types": ["node"],
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node"
+    ],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -12,5 +16,8 @@
     "skipLibCheck": false,
     "noEmit": true
   },
-  "files": ["consumer.ts"]
+  "files": [
+    "consumer.ts",
+    "store.ts"
+  ]
 }
