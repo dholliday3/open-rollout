@@ -28,7 +28,10 @@ const metrics = createMemoryMetrics();
 metrics.set(snapshot);
 const autopilot = createAutopilot({ flags, metrics, notifier: createMemoryNotifier(), store: createMemoryStore() });
 const started = await autopilot.start({ id: "checkout-1", plan, now });
-const status = await rolloutTools(autopilot).rollout_status.run({ id: "checkout-1" }, { actor: "ci", callKey: "ci:1", now });
+const tools = rolloutTools(autopilot, {
+  authorize: (request) => (request.tool === "rollout_start" && request.input.risk === "high" ? { allowed: false, reason: "High risk needs a person." } : { allowed: true }),
+});
+const status = await tools.rollout_status.run({ id: "checkout-1" }, { actor: "ci", callKey: "ci:1", now });
 
 const transport: PostHogTransport = async () => ({ status: 200, body: null });
 const posthog = {

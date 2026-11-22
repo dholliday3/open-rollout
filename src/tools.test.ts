@@ -1,5 +1,5 @@
-import { FIRST_SHARE, FLAG_KEY, METRIC, START, createWorld, recordOf, runFor, treatmentShare } from "./__tests__/world.js";
-import type { RolloutTools, ToolCall } from "./tools.js";
+import type { Authorization, RolloutTools, ToolCall, ToolRequest } from "./tools.js";
+import { FIRST_SHARE, FLAG_KEY, METRIC, ROLLOUT_ID, START, createWorld, recordOf, runFor, treatmentShare } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
 import type { World } from "./__tests__/world.js";
 import { rolloutTools } from "./tools.js";
@@ -13,8 +13,17 @@ const BROKEN = 0.5,
   STANDARD_FIRST_SHARE = 1000,
   START_INPUT: Parameters<RolloutTools["rollout_start"]["run"]>[0] = { flagKey: FLAG_KEY, guardrails: [{ direction: "lower_is_better", kind: "rate", metric: METRIC, onRegression: "rollback", tolerance: 0 }], id: "rollout-1", risk: "low" };
 
-function call(world: World, callKey: string): ToolCall {
-  return { actor: "dana", callKey, now: world.now };
+function call(world: World, callKey: string, actor = "dana"): ToolCall {
+  return { actor, callKey, now: world.now };
+}
+
+/** Lets anyone do anything but release, which only Dana may do; and keeps every request it was asked about. */
+function onlyDanaReleases(asked: ToolRequest[]): (request: ToolRequest) => Promise<Authorization> {
+  return async (request) => {
+    await Promise.resolve();
+    asked.push(request);
+    return request.tool === "rollout_release" && request.actor !== "dana" ? { allowed: false, reason: "Only Dana can release." } : { allowed: true };
+  };
 }
 
 describe("the agent's rollout tools", () => {
@@ -77,6 +86,39 @@ describe("the agent's rollout tools, planning for metrics that are slow or thin"
     expect(tool.inputSchema.safeParse({ ...START_INPUT, overrides: { onMetricsOutage: "shrug" } }).success).toBe(false);
     await expect(tool.run({ ...START_INPUT, overrides: { everyStep: { maxDurationMs: 1 } }, sourceLagMs: HOUR }, call(world, "call-1"))).resolves.toMatchObject({ ok: false });
     expect(treatmentShare(world)).toBe(0);
+  });
+});
+
+describe("the agent's rollout tools, behind an authorize hook", () => {
+  it("refuses a release the hook refuses, with its reason, and leaves the record and the flag as they were", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      tools = rolloutTools(world.autopilot, { authorize: onlyDanaReleases([]) });
+    await tools.rollout_start.run(START_INPUT, call(world, "call-1"));
+    const before = await world.store.load(ROLLOUT_ID),
+      refused = await tools.rollout_release.run({ id: ROLLOUT_ID }, call(world, "call-2", "sam"));
+    expect(refused).toStrictEqual({ message: "Not allowed: Only Dana can release.", ok: false, rollout: null });
+    await expect(world.store.load(ROLLOUT_ID)).resolves.toStrictEqual(before);
+    expect(treatmentShare(world)).toBe(STANDARD_FIRST_SHARE);
+  });
+
+  it("runs a release the hook allows, after telling it the tool, the input and who it is for", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      asked: ToolRequest[] = [],
+      tools = rolloutTools(world.autopilot, { authorize: onlyDanaReleases(asked) });
+    await tools.rollout_start.run(START_INPUT, call(world, "call-1"));
+    await expect(tools.rollout_release.run({ id: ROLLOUT_ID }, call(world, "call-2"))).resolves.toMatchObject({ ok: true, rollout: { phase: "releasing" } });
+    expect(asked.map((request) => request.tool)).toStrictEqual(["rollout_start", "rollout_release"]);
+    expect(asked.at(-1)).toStrictEqual({ actor: "dana", callKey: "call-2", input: { id: ROLLOUT_ID }, now: world.now, tool: "rollout_release" });
+  });
+
+  it("asks before a status too, and shows a refused caller no rollout", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      tools = rolloutTools(world.autopilot, { authorize: () => ({ allowed: false, reason: "Sam can't see rollouts." }) });
+    await rolloutTools(world.autopilot).rollout_start.run(START_INPUT, call(world, "call-1"));
+    await expect(tools.rollout_status.run({ id: ROLLOUT_ID }, call(world, "call-2", "sam"))).resolves.toStrictEqual({ message: "Not allowed: Sam can't see rollouts.", ok: false, rollout: null });
   });
 });
 

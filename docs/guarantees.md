@@ -93,6 +93,10 @@ watched again.
 - **Events** are saved to the record's outbox before they are sent, so a crash in between sends an event
   again with the same `key`. None is lost; the notifier drops repeats by key.
 - **A forced release** (`release`) skips the checks that are left, the metric checks included.
+- **Agent tools** run every call they are given, whoever the `actor` is, unless
+  `rolloutTools(autopilot, { authorize })` refuses it. The hook sees the tool's name, its input and the
+  call (`actor`, `callKey`, `now`) before anything runs, `rollout_status` included. A refused call changes
+  nothing and answers `ok: false` with the hook's reason and no rollout; a hook that throws stops the call.
 - **A pause on the wire.** A step change whose flag write is already on the wire when a pause arrives still
   lands. One that was only decided waits for the resume.
 

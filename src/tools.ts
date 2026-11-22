@@ -132,6 +132,25 @@ interface RolloutTools {
   readonly rollout_status: RolloutTool<TargetInput>;
 }
 
+type ToolInput<Name extends keyof RolloutTools> = Parameters<RolloutTools[Name]["run"]>[0];
+
+/** One tool call as `authorize` sees it, before it runs: which tool, its input, and who it is for. */
+type ToolRequest = { readonly [Name in keyof RolloutTools]: ToolCall & { readonly tool: Name; readonly input: ToolInput<Name> } }[keyof RolloutTools];
+
+/** What `authorize` says: go ahead, or refuse with a reason the agent is told. */
+type Authorization = { readonly allowed: true } | { readonly allowed: false; readonly reason: string };
+
+type Authorize = (request: ToolRequest) => Authorization | Promise<Authorization>;
+
+interface RolloutToolsOptions {
+  /**
+   * Asked before every call, `rollout_status` included. A refused call changes nothing and answers `ok: false`
+   * with the reason; a hook that throws stops the call too. Without it any actor may call any tool, including
+   * `rollout_release`, which skips every check that is left.
+   */
+  readonly authorize?: Authorize | undefined;
+}
+
 interface CommandTool<Input> {
   readonly description: string;
   readonly inputSchema: z.ZodType<Input>;
@@ -182,8 +201,7 @@ function controlTools(autopilot: Autopilot): Pick<RolloutTools, "rollout_approve
   };
 }
 
-/** The tools, keyed by name. Wrap each for the runtime at hand; the README has an example. */
-function rolloutTools(autopilot: Autopilot): RolloutTools {
+function everyTool(autopilot: Autopilot): RolloutTools {
   return {
     ...controlTools(autopilot),
     rollout_start: {
@@ -205,5 +223,38 @@ function rolloutTools(autopilot: Autopilot): RolloutTools {
   };
 }
 
-export type { RolloutTool, RolloutTools, ToolAnswer, ToolCall };
+/** The tool, asking first. A refused call shows no rollout either: whoever was refused may not be allowed to see it. */
+function asking<Input>(tool: RolloutTool<Input>, authorize: Authorize, requestOf: (input: Input, call: ToolCall) => ToolRequest): RolloutTool<Input> {
+  return {
+    ...tool,
+    run: async (input, call) => {
+      const verdict = await authorize(requestOf(input, call));
+      if (!verdict.allowed) {
+        return { message: `Not allowed: ${verdict.reason}`, ok: false, rollout: null };
+      }
+      const said = await tool.run(input, call);
+      return said;
+    },
+  };
+}
+
+/** The tools, keyed by name. Wrap each for the runtime at hand; the README has an example. */
+function rolloutTools(autopilot: Autopilot, options: RolloutToolsOptions = {}): RolloutTools {
+  const tools = everyTool(autopilot),
+    { authorize } = options;
+  if (authorize === undefined) {
+    return tools;
+  }
+  return {
+    rollout_approve: asking(tools.rollout_approve, authorize, (input, call) => ({ ...call, input, tool: "rollout_approve" })),
+    rollout_pause: asking(tools.rollout_pause, authorize, (input, call) => ({ ...call, input, tool: "rollout_pause" })),
+    rollout_release: asking(tools.rollout_release, authorize, (input, call) => ({ ...call, input, tool: "rollout_release" })),
+    rollout_resume: asking(tools.rollout_resume, authorize, (input, call) => ({ ...call, input, tool: "rollout_resume" })),
+    rollout_rollback: asking(tools.rollout_rollback, authorize, (input, call) => ({ ...call, input, tool: "rollout_rollback" })),
+    rollout_start: asking(tools.rollout_start, authorize, (input, call) => ({ ...call, input, tool: "rollout_start" })),
+    rollout_status: asking(tools.rollout_status, authorize, (input, call) => ({ ...call, input, tool: "rollout_status" })),
+  };
+}
+
+export type { Authorization, RolloutTool, RolloutTools, RolloutToolsOptions, ToolAnswer, ToolCall, ToolRequest };
 export { rolloutTools };
