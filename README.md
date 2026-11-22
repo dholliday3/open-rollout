@@ -135,6 +135,226 @@ flowchart LR
 A guardrail is `{ metric, kind, direction, tolerance, onRegression }`, where `kind` is `rate`, `mean` or
 `ratio`. Plans are plain objects, so you can write your own and check them with `planProblems(plan)`.
 
+Two options adjust a standard plan: `sourceLagMs` for metrics that run behind, such as a warehouse
+loaded hourly, and `overrides` for its steps, limits and policies, such as fewer units and longer steps
+for a product with few accounts.
+
+## Real-world examples
+
+Six problems, solved with the current API. Each snippet is a slice of
+[`examples/recipes.ts`](examples/recipes.ts), and [`examples/recipes.test.ts`](examples/recipes.test.ts)
+runs them against the quickstart's simulated traffic or a fake.
+
+<details>
+<summary><b>Rolling out a new billing engine to B2B accounts, not people</b></summary>
+
+<br>
+
+**By hand:** a dashboard counts people, but one company's users fail together, so the numbers look surer
+than they are. With few accounts, a 1% step may hold nobody to compare.
+
+```ts
+function billingEngine(postHog: PostHogConnection): { metrics: MetricSource; plan: RolloutPlan } {
+  const metrics = createPostHogMetrics({
+    ...postHog,
+    unit: { groupTypeIndex: 0 },
+    metrics: { invoice_failed: { event: "invoice failed", mayBeUnseen: true } },
+  });
+  const plan = standardPlan({
+    flagKey: "billing-engine-v2",
+    risk: "low",
+    guardrails: [
+      { metric: "invoice_failed", kind: "rate", direction: "lower_is_better", tolerance: 0,
+        mustRuleOut: 0.05, onRegression: "rollback" },
+    ],
+    overrides: {
+      everyStep: { minDurationMs: DAY, minFreshUnits: 20 },
+      requiresApprovalToRelease: true,
+    },
+  });
+  return { metrics, plan };
+}
+```
+
+**What happens:** PostHog counts each account (`$group_0`) once. The low-risk ladder starts at 10%; each
+step waits at least a day and for 20 new accounts a side, and passes only once invoice failures 5
+percentage points worse are ruled out. A person approves the release. `postHog` holds the project id,
+transport and lag, built as in [`examples/posthog.ts`](examples/posthog.ts).
+
+</details>
+
+<details>
+<summary><b>A checkout redesign that might hurt conversion</b></summary>
+
+<br>
+
+**By hand:** errors stay flat while fewer people buy, so the error graph stays green. Conversion needs a
+guardrail of its own, where higher is better.
+
+```ts
+const checkoutPlan = standardPlan({
+  flagKey: "checkout-redesign",
+  risk: "medium",
+  guardrails: [
+    { metric: "converted", kind: "rate", direction: "higher_is_better", tolerance: 0,
+      onRegression: "rollback" },
+    { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0,
+      onRegression: "rollback" },
+  ],
+});
+```
+
+**What happens:** On simulated traffic where 10% convert on the old checkout and 6% on the new, it rolls
+back during the 10% step, 23 minutes in; an equally good checkout is released in 69 minutes. In the full
+simulation a 40% drop was caught in 100 of 100 rollouts ([evaluation](docs/evaluation.md)).
+
+</details>
+
+<details>
+<summary><b>Moving traffic to a rewritten backend service</b></summary>
+
+<br>
+
+**By hand:** a latency graph is an average over requests that a few busy callers set, and one caller's
+requests succeed or fail together, so counting each request as a sample makes a blip look certain.
+
+```ts
+const serviceMetrics: Record<string, MetricDefinition> = {
+  ms_per_request: { event: "api request", property: "duration_ms", denominatorEvent: "api request" },
+  errors_per_request: { event: "api error", denominatorEvent: "api request", mayBeUnseen: true },
+  had_error: { event: "api error", mayBeUnseen: true },
+};
+
+const serviceGuardrails: Guardrail[] = [
+  { metric: "ms_per_request", kind: "ratio", direction: "lower_is_better", tolerance: 20,
+    onRegression: "rollback" },
+  { metric: "errors_per_request", kind: "ratio", direction: "lower_is_better", tolerance: 0,
+    onRegression: "rollback" },
+  { metric: "had_error", kind: "rate", direction: "lower_is_better", tolerance: 0,
+    onRegression: "rollback" },
+];
+```
+
+**What happens:** Each `ratio` measures per request but counts callers, and `tolerance: 20` allows 20 ms
+a request slower. Latency is a `ratio`, not a `mean`: a mean of latency summed per person follows the
+busiest people ([statistics](docs/statistics.md)). An outage took a median 28 minutes to catch on a ratio
+in simulation and 8.6 on a rate ([evaluation](docs/evaluation.md)), so `had_error` is there too.
+
+</details>
+
+<details>
+<summary><b>Your metrics come from a warehouse that lags an hour</b></summary>
+
+<br>
+
+**By hand:** you wait an hour for each number before you move the slider. A tool that expects fresh data
+reads hour-old numbers as an outage, and a step timed in minutes ends before its data arrives.
+
+```ts
+const searchErrors: Guardrail = {
+  metric: "errors",
+  kind: "rate",
+  direction: "lower_is_better",
+  tolerance: 0,
+  onRegression: "rollback",
+};
+
+const searchPlan = standardPlan({
+  flagKey: "search-ranking-v2",
+  risk: "low",
+  guardrails: [searchErrors],
+  sourceLagMs: HOUR,
+});
+```
+
+**What happens:** With metrics an hour behind, healthy code is released in 145 minutes. Without
+`sourceLagMs` the flag is never turned on: the metrics read as stale, and `metrics_outage` is reported 16
+minutes in. A plan that declares a lag it has no room for is refused:
+
+```ts
+const unprepared = standardPlan({
+  flagKey: "search-ranking-v2",
+  risk: "low",
+  guardrails: [searchErrors],
+});
+const lagProblems = planProblems({
+  ...unprepared,
+  limits: { ...unprepared.limits, sourceLagMs: HOUR },
+});
+```
+
+```text
+Metrics that run 60 minutes behind are always older than maxStalenessMs, so the rollout would never read them. Make it more than the lag.
+Step 1 gives up before metrics that run 60 minutes behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.
+Step 2 gives up before metrics that run 60 minutes behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.
+```
+
+</details>
+
+<details>
+<summary><b>Let on-call (or an AI agent) pause and roll back from Slack, but only release leads can release</b></summary>
+
+<br>
+
+**By hand:** whoever can reach the flag can push it to everybody and skip every check. On-call needs
+pause and rollback without that power.
+
+```ts
+const releaseLeads = new Set(["U02LEAD", "U07LEAD"]);
+const anyone = new Set(["rollout_status", "rollout_pause", "rollout_rollback"]);
+
+function slackTools(autopilot: Autopilot): RolloutTools {
+  return rolloutTools(autopilot, {
+    authorize: ({ tool, actor }) =>
+      anyone.has(tool) || releaseLeads.has(actor)
+        ? { allowed: true }
+        : { allowed: false, reason: "Only a release lead can do that." },
+  });
+}
+```
+
+**What happens:** A release from anyone else answers `Not allowed: Only a release lead can do that.` and
+changes nothing; their rollback goes through. The Slack user id is the `actor`, and the message id makes
+a good `callKey`.
+
+</details>
+
+<details>
+<summary><b>You keep flags in your own Postgres table, not a vendor</b></summary>
+
+<br>
+
+**By hand:** someone edits a row and watches a graph, and two edits at once quietly overwrite each other.
+
+```ts
+interface FlagRow { readonly control: number; readonly treatment: number; readonly revision: number }
+type QueryRow = (sql: string, values: readonly unknown[]) => Promise<FlagRow>;
+
+function tableFlags(queryRow: QueryRow): FlagControl {
+  return {
+    refusesStaleWrites: true,
+    read: async (flagKey) => {
+      const row = await queryRow("SELECT * FROM flags WHERE key = $1", [flagKey]);
+      return { allocation: { control: row.control, treatment: row.treatment }, revision: row.revision };
+    },
+    write: async (flagKey, allocation, expectedRevision) => {
+      const row = await queryRow(
+        `UPDATE flags SET control = $2, treatment = $3, revision = revision + 1
+         WHERE key = $1 AND ($4::bigint IS NULL OR revision = $4) RETURNING *`,
+        [flagKey, allocation.control, allocation.treatment, expectedRevision ?? null],
+      );
+      return row.revision;
+    },
+  };
+}
+```
+
+**What happens:** An update lands only on the revision it read, so a stale write fails and the next tick
+puts it right. `queryRow` runs one statement and returns its row or throws. Your app still has to bucket
+each user once, so a bigger share keeps everyone who was in.
+
+</details>
+
 ## Using it in production
 
 ### Run ticks from your scheduler
@@ -164,6 +384,8 @@ People and services steer a rollout with `autopilot.command(id, command, now)` (
 2. In your app, check `flag === "treatment"`.
 3. Wire the adapters from `open-rollout/posthog` with your API key, as in
    [`examples/posthog.ts`](examples/posthog.ts).
+4. To count accounts instead of people, give the metric source `unit: { groupTypeIndex }`, the index of
+   your PostHog group type (`$group_0` to `$group_4`).
 
 Every write carries the flag's version, so PostHog itself rejects a late write from a stalled worker.
 
@@ -184,7 +406,9 @@ async function rollBackCheckout(autopilot: Autopilot): Promise<ToolAnswer> {
 }
 ```
 
-A retried call with the same `callKey` is applied once.
+A retried call with the same `callKey` is applied once. Without a check of your own, any actor can call
+any tool, including `rollout_release`, which skips the checks that are left. Pass
+`rolloutTools(autopilot, { authorize })` to allow or refuse each call by tool, input and actor.
 
 ### Promote across environments
 
