@@ -128,5 +128,5 @@ CREATE UNIQUE INDEX rollouts_one_unsettled_per_flag ON rollouts (flag_key) WHERE
 ```
 
 `listUnsettled` is `SELECT id FROM rollouts WHERE NOT settled`. A plan that has been through a `jsonb`
-column comes back with its keys reordered; `start` compares plans by value, so a retried start still
-finds its own rollout.
+column comes back with its keys reordered and without any key that was set to `undefined`; `start`
+compares plans as JSON keeps them, so a retried start still finds its own rollout.

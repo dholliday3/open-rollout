@@ -8,7 +8,10 @@ vi.setConfig({ testTimeout: 10_000 });
 
 const LONG_ENOUGH_TO_SETTLE = 15;
 
-/** Sorts an object's keys the way Postgres `jsonb` stores them (shorter first, then by letter), all the way down. */
+/**
+ * Sorts an object's keys the way Postgres `jsonb` stores them (shorter first, then by letter), all the way down,
+ * and drops the keys set to undefined, which never reach the database as JSON.
+ */
 function asJsonbKeeps(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item: unknown) => asJsonbKeeps(item));
@@ -16,7 +19,9 @@ function asJsonbKeeps(value: unknown): unknown {
   if (value === null || typeof value !== "object") {
     return value;
   }
-  const entries = Object.entries(value).map(([key, inner]): [string, unknown] => [key, asJsonbKeeps(inner)]);
+  const entries = Object.entries(value)
+    .filter(([, inner]) => inner !== undefined)
+    .map(([key, inner]): [string, unknown] => [key, asJsonbKeeps(inner)]);
   entries.sort(([left], [right]) => left.length - right.length || left.localeCompare(right));
   return Object.fromEntries(entries);
 }
@@ -44,6 +49,17 @@ describe("a replayed start, against a store that keeps records as jsonb", () => 
     const bench = createBench(),
       autopilot = createAutopilot({ flags: bench.flags, metrics: bench.metrics, notifier: bench.notifier, store: jsonbStore(bench.store) }),
       request = { id: ROLLOUT_ID, now: bench.now, plan: bench.plan };
+    await expect(autopilot.start(request)).resolves.toMatchObject({ status: "started" });
+    await expect(autopilot.start(request)).resolves.toMatchObject({ problems: [], status: "started" });
+  });
+
+  it("finds its own rollout when the plan set an optional field to undefined, which JSON doesn't keep", async () => {
+    expect.hasAssertions();
+    const bench = createBench(),
+      autopilot = createAutopilot({ flags: bench.flags, metrics: bench.metrics, notifier: bench.notifier, store: jsonbStore(bench.store) }),
+      unset: Record<string, undefined> = { mustRuleOut: undefined },
+      plan = { ...bench.plan, guardrails: bench.plan.guardrails.map((guardrail) => ({ ...guardrail, ...unset })) },
+      request = { id: ROLLOUT_ID, now: bench.now, plan };
     await expect(autopilot.start(request)).resolves.toMatchObject({ status: "started" });
     await expect(autopilot.start(request)).resolves.toMatchObject({ problems: [], status: "started" });
   });

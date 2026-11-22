@@ -210,16 +210,24 @@ function isStepOf(plan: RolloutPlan, allocation: { control: number; treatment: n
   return allocation.control === allocation.treatment && plan.steps.some((step) => step.treatmentShare === allocation.treatment);
 }
 
+/** An object's entries as JSON keeps them: a key whose value is undefined is not written. */
+function keptEntries(value: object): [string, unknown][] {
+  return Object.entries(value).filter(([, entry]) => Array.isArray(value) || entry !== undefined);
+}
+
 function sameValue(left: unknown, right: unknown): boolean {
   if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
     return left === right;
   }
-  const entries = Object.entries(left),
-    other = new Map<string, unknown>(Object.entries(right));
+  const entries = keptEntries(left),
+    other = new Map<string, unknown>(keptEntries(right));
   return Array.isArray(left) === Array.isArray(right) && entries.length === other.size && entries.every(([key, value]) => other.has(key) && sameValue(value, other.get(key)));
 }
 
-/** True when two plans say the same thing, whatever order their keys are in. A plan that has been through a JSON column comes back reordered. */
+/**
+ * True when two plans say the same thing, as JSON would keep them. A plan that has been through a JSON column
+ * comes back with its keys reordered, and without any key that was set to undefined.
+ */
 function samePlan(left: RolloutPlan, right: RolloutPlan): boolean {
   return sameValue(left, right);
 }
