@@ -1,6 +1,6 @@
-# open-rollout: guarded flag rollouts as a library
+# Design
 
-open-rollout rolls a feature flag out in steps, watches guardrail metrics, and undoes the rollout when the new behaviour is worse. It is an open take on LaunchDarkly's Release Autopilot (guarded rollouts, auto-rollback, approvals, releases across environments) that runs on any flag provider and inside any durable runtime. The `README.md` has the contract and the code examples. This page has why it is shaped the way it is.
+Why open-rollout is shaped the way it is, and what attacking it taught. The [README](../README.md) has the overview and examples, [guarantees.md](guarantees.md) the contract, [statistics.md](statistics.md) the test, and [evaluation.md](evaluation.md) the numbers.
 
 Nothing in production uses it yet, and no PostHog flag has been written by it.
 
@@ -20,7 +20,7 @@ Nothing in production uses it yet, and no PostHog flag has been written by it.
 
 ## What attacking it found
 
-A separate agent, given none of the implementation's reasoning, built a simulated production in `src/sim` and attacked the README's claims over three rounds: people with heavy-tailed activity who come back, a PostHog-like provider with polling evaluators and stale reads, an event pipeline with lag and loss, workers that interleave, stall and crash at every port call, and people at the provider's console. Its oracle checks what was really served, not the record. The first version failed 20 of its tests. What that taught, for whoever builds the next thing like this:
+A separate agent, given none of the implementation's reasoning, built a simulated production in `src/sim` and attacked the claims now in [guarantees.md](guarantees.md) over three rounds: people with heavy-tailed activity who come back, a PostHog-like provider with polling evaluators and stale reads, an event pipeline with lag and loss, workers that interleave, stall and crash at every port call, and people at the provider's console. Its oracle checks what was really served, not the record. The first version failed 20 of its tests. What that taught, for whoever builds the next thing like this:
 
 - **An approval is permission, not evidence.** The first version released the moment a yes arrived, with the metrics down or already failing. A gate now opens on the next tick, and only if the evidence still holds.
 - **"My write hasn't landed" and "a person changed it back" look the same on the next read.** They need opposite answers: send it again, or leave it alone. The first fix was a pile of bookkeeping (a revision history, an acknowledged flag, two timers). The second round's criticism was to delete it: make the flag's revision an ordered number and have a write return the revision it left. Then a flag still at the revision it had when the write was sent hasn't taken the write, and a flag that has moved on and doesn't serve the step was changed by someone else.
@@ -33,9 +33,9 @@ A separate agent, given none of the implementation's reasoning, built a simulate
 - **"Passed" was "not yet detectable".** A 25% worse error rate was released two times in three. `mustRuleOut` on a guardrail makes a step wait until a regression that large is ruled out.
 - **A person who lowers a flag is always right; a person who raises one never is.** Every round found another moment (before the first confirmation, 45 seconds after a write, during a release, after one) where a kill switch was overwritten.
 
-The third round's 2,000 chaotic runs found one failure the package doesn't fix: on a provider that can't refuse a stale write, a worker stalled for 18 minutes inside a write landed an old step 3 seconds after its rollback settled. The README lists that limit. PostHog refuses the write.
+The third round's 2,000 chaotic runs found one failure the package doesn't fix: on a provider that can't refuse a stale write, a worker stalled for 18 minutes inside a write landed an old step 3 seconds after its rollback settled. [limits.md](limits.md) lists it. PostHog refuses the write.
 
-`pnpm sim` reruns the simulation at full size for its numbers. Still open: the first real rollout, and ratio guardrails are slow (see the README's metric kinds).
+`pnpm sim` reruns the simulation at full size for its numbers. Still open: the first real rollout, and ratio guardrails are slow ([statistics.md](statistics.md#the-ratios-spread)).
 
 ## PostHog
 
@@ -62,6 +62,4 @@ Read from its docs on 2026-11-21, for the next person who compares:
 
 ## Not built
 
-- Reading a pull request to propose a flag, opening pull requests that remove finished flags, and handing a regression to an agent to fix. LaunchDarkly's product has all three; they are agent work on top of this package.
-- Percentile metrics (P99 latency). Use a `rate` of "slower than the budget" instead.
-- A database-backed store. The README has the one-table Postgres shape; the package ships an in-memory one.
+See [limits.md](limits.md#not-built).

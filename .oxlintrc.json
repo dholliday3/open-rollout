@@ -61,6 +61,11 @@
   },
   "overrides": [
     {
+      // Examples are scripts people copy from the README: they print, await at the top level and use plain numbers.
+      "files": ["examples/**/*.ts"],
+      "rules": { "no-await-in-loop": "off", "no-console": "off", "no-magic-numbers": "off", "node/no-top-level-await": "off" }
+    },
+    {
       // Vitest and Stryker load a config file's default export.
       "files": ["*.config.{ts,mjs}"],
       "rules": { "import/no-default-export": "off", "node/no-process-env": "off" }

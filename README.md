@@ -1,324 +1,249 @@
 # open-rollout
 
-Rolls a feature flag out in steps, watches guardrail metrics while it does, and undoes the rollout when
-the new behaviour is worse. It is an open take on LaunchDarkly's Release Autopilot (guarded rollouts,
-auto-rollback, approvals) that runs on any feature flag provider and inside any durable runtime.
+[![CI](https://github.com/dholliday3/open-rollout/actions/workflows/ci.yml/badge.svg)](https://github.com/dholliday3/open-rollout/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The package has no I/O of its own. You give it four ports and call `tick`.
+A TypeScript library for guarded feature flag rollouts: step traffic up, watch guardrail metrics, roll back
+on a regression. Works with any flag provider.
 
-## The idea in one paragraph
+**Status:** pre-1.0 and not on npm. No real rollout has run on it yet. [Details](#status).
 
-A rollout is a **record** in a store you own. A **tick** loads the record, looks at the flag and the
-metrics once, runs a pure function (`decide`) to get the next record and at most one flag write, saves
-the record with compare-and-set, and only then writes the flag. Nothing lives in the runtime: a tick can
-be late, repeated, run by two workers at once, or cut off at any line, and the next tick carries on from
-the record. That is what lets it sit inside a durable agent runtime, the Workflow SDK, BullMQ, cron or
-anything else.
+Most percentage rollouts are a person moving a slider and watching a dashboard. Automating that is harder
+than it looks. Run a t-test every minute and healthy code gets rolled back by chance; check less often and
+real regressions ship. And the automation has to stay correct when its job is retried, crashes halfway,
+runs on two workers at once, or meets a person who changed the flag by hand. Commercial flag platforms sell
+this as a feature of their own flags and metrics ([Compared to](#compared-to)).
 
-## Traffic model
+open-rollout moves a flag through steps, compares the new behaviour with the old at each step using a test
+that stays valid however often it looks, and undoes the rollout when the new behaviour is worse. It runs on
+your flag provider, metrics and job runner, with its state in a store you own. It is for teams that have
+feature flags and product analytics and want automatic rollback without changing vendors.
 
-An `Allocation` is two shares in basis points: `treatment` (new behaviour) and `control` (old behaviour,
-measured). Whatever is left gets the old behaviour unmeasured. A step always holds **equal** treatment and
-control shares (10% each, then 50% each), so every hour of the day counts the same on both arms and the
-arms should always be the same size. That is LaunchDarkly's rule, and it is why a traffic spike or a bad
-hour that hits everyone does not look like a regression. The release is `{ treatment: 10000, control: 0 }`;
-a rollback is `{ treatment: 0, control: 0 }`.
+```ts
+import { createAutopilot, createMemoryFlags, createMemoryNotifier, createMemoryStore, standardPlan } from "open-rollout";
+import { simulatedTraffic } from "./simulated-traffic";
 
-With an off-the-shelf provider this is a multivariate flag with `control` and `treatment` variants split
-50/50, and a rollout percentage of twice the step. Bucketing must be sticky and the variant hash must not
-depend on the rollout percentage (PostHog, LaunchDarkly, GrowthBook, Unleash and Flagsmith all do this).
+const flags = createMemoryFlags();
+const notifier = createMemoryNotifier();
+const traffic = simulatedTraffic({
+  flags,
+  flagKey: "new-checkout",
+  metric: "errors",
+  errorRate: { control: 0.02, treatment: 0.02 },
+});
+const autopilot = createAutopilot({ flags, metrics: traffic, notifier, store: createMemoryStore() });
 
-## Ports
+const plan = standardPlan({
+  flagKey: "new-checkout",
+  risk: "low",
+  guardrails: [{ metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0, onRegression: "rollback" }],
+});
+await autopilot.start({ id: "checkout-1", plan, now: traffic.now() });
 
-| Port | Calls | Contract |
+for (let minute = 0; minute < 60; minute += 1) {
+  traffic.passMinute();
+  await autopilot.tickAll(traffic.now());
+}
+
+for (const event of notifier.events) {
+  console.log(`${event.type}: ${event.detail}`);
+}
+```
+
+```text
+started: Rollout of new-checkout started.
+step_started: 10% of traffic is on the new behaviour.
+step_started: 50% of traffic is on the new behaviour.
+releasing: Every step passed. Releasing to everybody.
+released: Released: the flag is on for everybody.
+```
+
+That is [`examples/quickstart.ts`](examples/quickstart.ts) (`pnpm quickstart`). The in-memory adapters
+stand in for a flag provider, and [`simulated-traffic.ts`](examples/simulated-traffic.ts) for analytics: an
+hour of traffic at 1,000 people a minute, in under a second. Give the new arm an error rate of 0.10 and the rollout is
+rolled back three minutes in, at 10%. [`quickstart.test.ts`](examples/quickstart.test.ts) checks both.
+
+## Status
+
+> - **Built and tested:** the decision core, the controller, the statistics, the in-memory adapters, the
+>   agent tools and releases across environments, with unit tests and a simulation (`src/sim`) that
+>   attacks the guarantees below.
+> - **Not verified against the real service:** the PostHog flag adapter has never written a real PostHog
+>   flag; its tests use a fake that enforces versions the way PostHog's docs describe. Its two HogQL
+>   queries were run read-only against a live project and parse.
+> - **Not run for real:** no production rollout has used it yet. The numbers in this README are from
+>   simulation.
+> - **May change:** any API, before 1.0.
+> - **Not built:** a database-backed store, adapters for providers other than PostHog, percentile metrics,
+>   and a compiled build (the package ships TypeScript source).
+
+## Install
+
+```sh
+pnpm add github:dholliday3/open-rollout
+```
+
+Requires Node 22.12 or later. The one runtime dependency is zod 4.
+
+The package exports its TypeScript source (`src/index.ts`) and has no build step yet, so:
+
+- Load it through something that compiles TypeScript inside `node_modules`. tsx 4.23, Bun 1.3 and an
+  esbuild 0.28 bundle were checked. Plain `node` refuses: it does not strip types under `node_modules`.
+- Type-check with `"moduleResolution": "bundler"`. Under `nodenext`, or with flags beyond `strict` such as
+  `exactOptionalPropertyTypes`, your `tsc` reports errors inside the package's source.
+
+## How it works
+
+```text
+tick(id, now): load record → read flag → read metrics → decide() → save (compare-and-set) → write flag → notify
+                                                         pure        a lost save stops here
+```
+
+- **A rollout is a record** in a store you own. `tick` loads it, reads the flag and the metrics once, and
+  calls `decide(record, observation, now)`, a pure function with no clock and no I/O that returns the next
+  record and at most one flag write.
+- **Save, then write.** The record is saved with compare-and-set before the flag is written, so only one
+  worker acts on a decision. A tick can be late, repeated, run on two workers at once or cut off anywhere,
+  and the next tick carries on from the record.
+- **Equal arms.** Each step gives the new behaviour (treatment) and the old one (control, measured) equal
+  shares, such as 10% and 10%, then 50% and 50%, then releases to everybody. A bad hour lands on both arms
+  alike, and the arms should always be the same size, which a sample ratio check tests.
+- **A test built for repeated looks.** Each guardrail compares treatment minus control with a
+  normal-mixture confidence sequence, so the chance of calling healthy code worse over a whole rollout
+  stays under `limits.alpha` (5% by default) however often it ticks. Details in
+  [docs/statistics.md](docs/statistics.md).
+- **No answer is not good news.** A failed read, stale or malformed metrics, or too few new people hold the
+  rollout. They never move it forward.
+
+Phases: `ramping` → `releasing` → `released`, with `awaiting_approval` before any gate that needs a
+person, `paused` from any live phase, and `rolling_back` → `rolled_back` from anywhere before the release.
+A finished rollout is watched for `settleMs` (10 minutes) and then settles.
+
+## Usage
+
+### Plans
+
+`standardPlan({ flagKey, guardrails, risk })` picks a ladder by risk:
+
+| Risk | Share on the new behaviour | Least watch per step | Approval |
+|---|---|---|---|
+| `low` | 10%, 50% | 10, 10 min | none |
+| `medium` | 1%, 10%, 25%, 50% | 10, 15, 15, 20 min | none |
+| `high` | 1%, 5%, 10%, 25%, 50% | 30, 30, 60, 120, 240 min | before the release |
+
+Control gets the same share at each step. A step also needs 50 new people on each arm, and gives up after
+six times its least watch (the standard plans pause and ask a person). A guardrail is `{ metric, kind,
+direction, tolerance, onRegression, mustRuleOut? }`, where `kind` is `rate`, `mean` or `ratio`. A plan is
+a plain object, so you can build your own; `planProblems(plan)` lists what is wrong with it.
+
+### Running ticks
+
+The store is the only durable state, so any scheduler works: cron, a BullMQ repeatable job, a durable
+runtime's schedule, or a workflow that ticks one rollout and sleeps. Call this every minute or so:
+
+```ts
+async function tickRollouts(autopilot: Autopilot): Promise<void> {
+  const results = await autopilot.tickAll(Date.now());
+  const problems = results.filter((result) => result.status === "failed").flatMap((result) => result.problems);
+  if (problems.length > 0) {
+    throw new Error(problems.join(" "));
+  }
+}
+```
+
+`tick` never throws. A store it can't reach comes back as `status: "failed"`, and throwing on that hands
+the retry to your runtime. Two schedulers ticking the same rollout is safe: the tick that loses the save
+does nothing. People and services steer a rollout with `autopilot.command(id, command, now)` (`pause`,
+`resume`, `rollback`, `release`, `approve`) and read it with `autopilot.inspect(id)`.
+
+### Agent tools
+
+`rolloutTools(autopilot)` returns `rollout_start`, `rollout_status`, `rollout_pause`, `rollout_resume`,
+`rollout_rollback`, `rollout_approve` and `rollout_release`. Each is a `description`, a zod `inputSchema`
+and a `run`, so it wraps into an AI SDK tool or an MCP server in a few lines.
+
+```ts
+async function rollBackCheckout(autopilot: Autopilot): Promise<ToolAnswer> {
+  const tools = rolloutTools(autopilot);
+  const answer = await tools.rollout_rollback.run(
+    { id: "checkout-1", note: "Support is seeing failed payments." },
+    { actor: "alice", callKey: "session-42:call-7", now: Date.now() },
+  );
+  return answer;
+}
+```
+
+`callKey` must be the same when your runtime retries the call, so the command is applied once. A rollout
+that needs a yes waits in `awaiting_approval` until `rollout_approve` arrives; nothing parks a conversation.
+
+### Releases across environments
+
+`createReleaser({ store, autopilotFor })` takes one change through environments in order, such as staging
+then production, each with its own rollout. A stage starts on `promotion` (the one before it released), a
+`deploy_signal` from your pipeline, or a `manual` go. A rollback anywhere pauses the stages that haven't
+started.
+
+## Adapters
+
+| Port | What it must do | Included |
 |---|---|---|
-| `FlagControl` | `read(flagKey)`, `write(flagKey, allocation, expectedRevision?)`, `refusesStaleWrites` | Whole-state reads and writes, never increments. `revision` is a whole number that goes up on every saved change to the flag, whatever was changed, and doesn't come down; `write` returns the revision it left the flag at. `refusesStaleWrites` says whether a write with a stale `expectedRevision` is refused. |
-| `MetricSource` | `snapshot({ flagKey, since, guardrails })` | Running totals per arm since `since`, units counted by first exposure, plus two times on the source's own clock: `asOf`, when the snapshot was taken, and `watermark`, up to when the data is complete. |
-| `RolloutStore` | `create`, `load`, `save(record, expectedVersion)`, `listUnsettled` | `save` is compare-and-set. `create` refuses a second unsettled rollout on one flag. |
-| `Notifier` | `notify(event)` | May be called twice for one event; `event.key` is stable so the receiver can drop repeats. |
+| `FlagControl` | Read and write a flag's whole allocation, with a revision number that only goes up | `createMemoryFlags`, `createPostHogFlags` |
+| `MetricSource` | Running totals per arm since a time, with `asOf` and `watermark` on its own clock | `createMemoryMetrics`, `createPostHogMetrics` |
+| `RolloutStore` | Save with compare-and-set; one unsettled rollout per flag | `createMemoryStore` |
+| `Notifier` | Deliver events; it may get one twice, and `event.key` tells repeats apart | `createMemoryNotifier` |
 
-`createMemoryStore`, `createMemoryFlags`, `createMemoryMetrics` and `createMemoryNotifier` are reference
-implementations for tests.
+Full contracts and a one-table Postgres store: [docs/guarantees.md](docs/guarantees.md#ports).
 
-## Lifecycle
+**PostHog.** Make a multivariate flag with variants `control` and `treatment` at 50/50 and one release
+condition with no filters at 0%; your code checks `flag === "treatment"`. Both adapters take a transport
+(your `fetch` with an API key and a timeout); [`examples/posthog.ts`](examples/posthog.ts) wires them up.
+Every flag write carries the flag's `version`, so PostHog itself refuses a stalled worker's late write
+(409). Metrics come from a HogQL query that counts people from their first `$feature_flag_called`.
 
-`awaiting_approval → ramping (step 0..n) → releasing → released`, with `paused` reachable from any phase
-before `released`, and `rolling_back → rolled_back` reachable from anywhere before `released`. A finished
-rollout is watched for `settleMs` and then `settled`, after which ticks stop.
+**Other providers** need only a `FlagControl`: flags with a revision number that goes up on every change,
+and a percentage rollout with sticky bucketing. A content hash that repeats when a flag is put back is not
+enough.
 
-A step moves on only when all of these hold:
+## Guarantees and limits
 
-1. the flag has been seen serving the step;
-2. the step has been watched for `propagationMs + minDurationMs`, on two clocks. On the metric source's
-   clock: from `asOf` of the first snapshot taken after the flag was seen serving the step, until the
-   `watermark` has passed that by the whole time. And on the workers' clock: that long since the flag was
-   seen serving the step. No stalled tick, no ingestion lag and no one clock being wrong or put right can
-   shorten it. It starts again if someone else changes the flag and the rollout has to put it back;
-3. each arm gained `minFreshUnits` new units during the step, counted from no lower than where the last
-   step ended;
-4. the metrics are fresh (`maxStalenessMs`), make sense (no missing metric, negative count, NaN, sum of
-   squares that can't go with its total, or watermark after the snapshot was taken), give every guardrail
-   a reading, and no guardrail has regressed;
-5. every guardrail with a `mustRuleOut` has a reading sharp enough to rule out a regression that large;
-6. the next gate is approved, if the plan asks for approval.
+[docs/guarantees.md](docs/guarantees.md) states each of these and what it rests on:
 
-An approval is permission, not evidence. It opens the gate on the next tick, and only if conditions 1 and
-4 still hold then: the step may have passed its watch days before the yes arrived.
+1. Never more exposure than the record says.
+2. Never forward without evidence.
+3. A rollback always wins.
+4. A person who lowers the flag is left alone, and only a person is blamed.
+5. One flag write per won save; a command sent twice is applied once.
+6. The false-alarm rate holds under repeated looks.
+7. After any mix of failures, a few clean ticks bring the flag to what the record says.
 
-Guardrails are read on every tick from the moment the new behaviour is first sent to anyone, landed or
-not, through every pause and every wait for approval, until the rollout is undone or its release is sent.
-A release whose write never goes through goes back to its gate after `propagationMs`, so the step is
-watched again.
+In simulation ([docs/evaluation.md](docs/evaluation.md)): 2,000 seeded runs in each of 8 chaotic
+configurations broke none of these. Healthy code was called worse in 0.3% to 3.0% of rollouts against a 5%
+budget. A total outage was caught in all 100 rollouts, in a median 8.6 minutes, with 15 people exposed.
 
-**"Passed" means "nothing detected" unless you say otherwise.** By default a step passes when its time and
-its new units are in and no guardrail has regressed, as in LaunchDarkly. On thin traffic that lets through
-a regression too small to see yet: in the simulation a 25% worse error rate was released two times in
-three. Give a guardrail a `mustRuleOut` and a step passes only once a regression that large is outside the
-reading; a step that can't get there in its `maxDurationMs` ends as `onInsufficientData` says.
+Known limits ([docs/limits.md](docs/limits.md)):
 
-## What it promises
+- On a provider that can't refuse a stale write, a worker frozen inside a write for longer than `settleMs`
+  can land an old step. PostHog refuses stale writes.
+- Small regressions pass unless a guardrail sets `mustRuleOut`: errors 1.25 times as common were caught in
+  35% of simulated rollouts.
+- Ratio guardrails are slow: an outage took a median 28 minutes on one, against 8.6 on a rate.
+- "Rolled back" means the provider serves the flag off. A client holding a cached flag catches up on its
+  next fetch.
 
-These are the claims the simulation in `src/sim` attacks.
+## Compared to
 
-1. **Never more exposure than the record says.** The flag is only ever written to `record.desired`.
-   Exposure above it (a stalled worker's late write, a person raising the flag by hand) is brought back
-   down on the next tick, including for `settleMs` after a rollback.
-2. **Never forward without evidence.** No step-up and no release happens on missing, stale, malformed or
-   failing metrics, on a failed flag read, on an approval alone, or on time passing with no new units.
-   Exposure is never raised while the metrics can't be read, the first step included.
-3. **A rollback always wins.** Once a rollback is saved, every tick sets the flag to nobody until it is
-   seen to hold, even when the flag can't be read. Nothing moves a rolled-back rollout forward.
-4. **A person who lowers the flag is left alone, and only a person is blamed.** That holds whether the
-   rollout had seen its step in force yet or not, however soon after a write, during a release, and after
-   one. The rollout pauses, and only an explicit resume puts the step back. A paused rollout never raises
-   exposure. A read that is behind (a replica, a cache) and an edit to something other than the flag's
-   shares are neither of them a person lowering the flag. A write that failed is sent again only over a
-   flag that is at most one such edit on from when the write was decided.
-5. **One write per won save.** Every flag write follows a save that only one worker can win, so two
-   workers ticking at once send one write. A command is answered the way it was the first time, however
-   often and however much later it is sent again: applied once, or refused again. Each event has one key.
-6. **Honest statistics under repeated looks.** Over a whole rollout of healthy code, the chance that any
-   guardrail calls it worse is at most `limits.alpha`, however often the ticks look, for all three metric
-   kinds, on people as unequal as real ones. The sample ratio check has its own budget,
-   `limits.sampleRatioAlpha`. Totals that can't be a measurement are read as nothing: never as healthy,
-   never as worse.
-7. **Everything converges.** After any mix of failed reads, failed writes, crashes and lost races, a few
-   clean ticks bring the flag to `record.desired`, unless a person lowered it, which is reported and left.
+LaunchDarkly's guarded rollouts, part of its Release Autopilot, do this inside its own platform. open-rollout
+follows the rules it publishes where they are known: equal traffic on both arms, a largest measured step
+of 50%, a sequential test on new minus old, and a sample ratio check. The differences:
 
-Known limits, by design:
+- It is a library. The flags, metrics, store and scheduler are yours; changing flag provider means writing
+  one adapter.
+- On too little data, the standard plans pause and ask a person. The hosted product rolls back, which on a
+  quiet night would undo every rollout.
+- It does not propose flags from pull requests, remove finished flags, or hand a regression to an agent to
+  fix. `rollout_status` returns each guardrail's reading, which is where such an agent would start.
 
-- **Providers that can't refuse a late write** (`refusesStaleWrites: false`). The package narrows the
-  window (it reloads the record's version just before writing) and repairs it on the next tick. After a
-  release on such a provider, a flag showing equal shares of one of the rollout's own steps is taken to be
-  that late write and the release is written again; a person who set exactly those shares by hand within
-  `settleMs` would be overridden. A worker frozen mid-write for longer than `settleMs` could still leave a
-  stale allocation: in the simulation one chaotic run in 2,000 did, with a worker stalled for 18 minutes.
-  A write whose answer was lost, then a person's change, then a read that is behind can together hide the
-  person's change from the retry. Keep `settleMs` above your runtime's step timeout, and put a timeout on
-  the provider call. PostHog refuses stale writes, so none of this applies there.
-- **Revisions must be ordered numbers.** Everything the rollout knows about who changed the flag comes
-  from them: a reading below one already seen is a read that is behind and is ignored; a flag still at the
-  revision it had when a write was sent has not taken the write; a flag that has moved on and doesn't
-  serve the step was changed by someone else. A provider that can only offer a tag of the flag's content
-  (which comes back when the flag is put back) can't be driven safely and has no adapter here.
-- **A revision that comes down.** Deleting a flag and making it again starts its revision over, and an
-  adapter with a bug can answer a write with a number that is too high. Either way every reading is then
-  "behind". After five minutes of that with no reading at or above the number it knew, the rollout takes
-  the flag as it reads, says so in an `external_change` event, and treats whatever the flag serves as
-  someone else's change: lower pauses, higher is put back. For those five minutes it holds.
-- **Two quiet edits.** Between a write that failed and its retry, one edit that leaves the shares alone is
-  seen for what it is. Two such edits can't be told from the write landing and a person undoing it, so the
-  rollout pauses for `external_change`. A resume carries on.
-- **Identities that don't stick.** When more than `maxContaminatedShare` of units are seen on both arms,
-  the rollout pauses as `contaminated` and reads nothing else: units seen on both arms are left out of
-  both, so neither the guardrails nor the arms' sizes mean anything.
-- **Flag propagation.** `propagationMs` is how long a flag change takes to reach every evaluator. An event
-  that says the flag is off means the provider serves it off; an app holding an older copy of the flag
-  catches up when it next fetches it. In the simulation, phones with a cached flag were still on the new
-  behaviour for some minutes after a rollback.
-- **A pause on the wire.** A step change whose flag write is already on the wire when a pause arrives
-  still lands. One that was only decided waits for the resume.
-- **A forced release** (`release`) skips the checks that are left, the metric checks included.
-- **After a rollback**, for `settleMs`, any exposure is turned off again, a person's included. Start a new
-  rollout to turn the flag back on.
-- **Both arms at once.** Guardrails compare arms; a failure that hits both equally is not the rollout's
-  fault and is not detected.
-- **Clocks.** A worker whose clock is wrong by more than `maxStalenessMs` reads fresh metrics as stale and
-  holds. Step timeouts (`maxDurationMs`), expiry and the settle window are measured on worker clocks, so a
-  wrong clock moves them by its error. A step's watch runs on the metric source's clock and the workers'
-  at once, so one wrong clock can make it longer and never shorter; both wrong the same way could shorten
-  it. A plan with no guardrails has no metric source, so its steps are timed on worker clocks alone.
-- **`tick` never throws.** A store that can't be reached comes back as `status: "failed"`. A runtime that
-  retries a step only when it throws should throw on `failed` itself; the workflow example below does.
+## Contributing and license
 
-## Metric kinds
-
-- `rate`: share of units that had the event (error, conversion). Needs `units` and `sum`.
-- `mean`: average per unit (errors per person). Needs `sumSquares` too. A per-person total of something
-  that scales with activity (latency summed over a person's requests) is dominated by the busiest people
-  and detects almost nothing; use a `ratio` for a per-request quantity.
-- `ratio`: one total over another when the rows are not the unit (errors per request, latency per
-  request, split by person). Needs the denominator's sums. Counting requests as units instead overstates
-  the evidence; `src/stats.test.ts` shows it crying wolf.
-
-The test is a normal-mixture confidence sequence on the difference (treatment minus control), one-sided
-at `alpha / guardrails.length` each. `tuneAtUnits` is the sample size per arm where it is sharpest. A
-ratio's spread is taken around the ratio both arms share, not around each arm's own: an arm where one or
-two people make most of the requests fits its own ratio to them and reports almost no spread, which
-called healthy code worse 10.6% of the time against a 5% budget until the simulation caught it.
-
-That fix costs a ratio some power, because the spread it uses grows with the gap between the arms. In the
-simulation a total outage was caught on a ratio in a median 27 minutes with 59 people exposed, against 9
-minutes and 15 people on a rate; a doubled error rate was caught about half the time. So guard an outage
-with a `rate` (people with an error) as well as any `ratio`, and where one unit can hold most of what is
-under the line, cap each unit's contribution in the metric source. A ratio whose events show up on the new
-arm with nothing under the line at all (the new code fails before a request is counted) is acted on as a
-regression, not waited out.
-
-**How much traffic a plan needs.** Each step needs `minFreshUnits` new units on each arm within its
-`maxDurationMs`. The standard medium plan starts at 1% a side and asks for 50 new units a side within an
-hour, which is about 85 new units a minute across the whole product. Below that, lower `minFreshUnits`,
-lengthen the steps, start at a larger share, or pick a busier unit. The standard plans pause on too little
-data and ask a person; LaunchDarkly rolls back, which on a quiet night would undo every rollout.
-
-## PostHog
-
-`createPostHogFlags` and `createPostHogMetrics` are the first real adapters. Both take a `transport`
-(your `fetch` with a personal API key and a timeout), so the package has no HTTP client of its own.
-
-Set the flag up once: a multivariate flag with variants `control` and `treatment` at 50/50, one release
-condition with no filters at 0%. Your code checks `flag === "treatment"`.
-
-| Allocation | What the adapter does |
-|---|---|
-| A step (10% treatment, 10% control) | `set_release_condition_rollout` to 20% |
-| Nobody (rollback) | `set_release_condition_rollout` to 0% on every condition |
-| Everybody (release) | `roll_out_to_everyone` with `variant_key: "treatment"` |
-
-Both calls carry the flag's `version` and PostHog answers 409 when the flag changed since that version.
-So a late write from a stalled worker is refused by PostHog itself, which closes the first "known limit"
-above for this provider.
-
-Metrics come from one HogQL query: people first exposed by `$feature_flag_called`, then what each of them
-did afterwards, totalled per arm. A person is the unit. The watermark is `ingestionLagMs` behind the
-caller's clock or PostHog's own, whichever is earlier, or the newest event of any kind when nothing has
-arrived that recently, so a quiet night or a stuck pipeline reads as stale and the rollout holds. `asOf`
-is PostHog's own clock. An event the project has not seen in
-a month is taken for a misspelt one and the snapshot is refused, because its zeros on both arms would read
-as a healthy metric; mark a metric `mayBeUnseen` when its event really can go a month without happening.
-The adapter refuses a flag whose release conditions carry filters or a variant override. The query and
-the freshness query were both run against a live PostHog project (2026-11-21) and parse. No flag in
-PostHog has been written by this adapter yet: its tests run against a fake that enforces versions the way
-the PostHog docs describe.
-
-Other providers need only a `FlagControl`. LaunchDarkly, GrowthBook, Unleash and Flagsmith all have a
-percentage rollout with sticky hashing and a management API; the mapping is the same three rows.
-
-## Plugging into a runtime
-
-The store is the only durable thing. Pick whichever driver your runtime makes cheap.
-
-**A schedule** (a durable runtime's schedules, BullMQ, cron). Prefer it on a self-hosted runtime whose
-upgrades strand parked workflow runs: a rollout lasts hours.
-
-```ts
-// schedules/rollouts.ts, in a runtime that runs a schedule's `run` on a cron
-import { defineSchedule } from "your-runtime/schedules";
-import { autopilot } from "../lib/autopilot";
-
-export default defineSchedule({
-  cron: "* * * * *",
-  async run() {
-    await autopilot.tickAll(Date.now());
-  },
-});
-```
-
-**A workflow loop** (Vercel Workflow, Temporal, Inngest), where a run survives deploys. The body stays
-deterministic because the clock is read inside the step.
-
-```ts
-import { sleep } from "workflow";
-
-export async function driveRollout(id: string) {
-  "use workflow";
-  while (!(await tickOnce(id))) {
-    await sleep("30s");
-  }
-}
-
-async function tickOnce(id: string) {
-  "use step";
-  const result = await autopilot.tick(id, Date.now());
-  if (result.status === "failed") {
-    // The store couldn't be reached. Throwing hands the retry to the runtime.
-    throw new Error(result.problems.join(" "));
-  }
-  return result.status === "settled" || result.status === "not_found";
-}
-```
-
-Both can run at once without harm: a tick that loses the save does nothing.
-
-**Tools for the agent.** `rolloutTools(autopilot)` returns `rollout_start`, `rollout_status`,
-`rollout_pause`, `rollout_resume`, `rollout_rollback`, `rollout_approve` and `rollout_release`, each a
-description, a zod schema and a `run`. In a runtime that loads one file per tool:
-
-```ts
-// tools/rollout_rollback.ts
-import { defineTool } from "your-runtime/tools";
-import { rolloutTools } from "open-rollout";
-import { autopilot } from "../lib/autopilot";
-
-const tool = rolloutTools(autopilot).rollout_rollback;
-
-export default defineTool({
-  description: tool.description,
-  inputSchema: tool.inputSchema,
-  execute: (input, ctx) =>
-    tool.run(input, {
-      actor: ctx.userId ?? "agent",
-      // The same on a retried step, so the command is applied once.
-      callKey: `${ctx.sessionId}:${ctx.callId}`,
-      now: Date.now(),
-    }),
-});
-```
-
-An approval is a command on the record, not a parked turn: a rollout that needs a yes sits in
-`awaiting_approval`, the conversation carries on, and the yes arrives whenever it arrives as
-`rollout_approve`. If your runtime can ask a person to confirm a tool call, put that on
-`rollout_approve` and `rollout_release`.
-
-**A store.** In Postgres it is one table:
-
-```sql
-CREATE TABLE rollouts (
-  id text PRIMARY KEY,
-  flag_key text NOT NULL,
-  settled boolean NOT NULL DEFAULT false,
-  version integer NOT NULL DEFAULT 1,
-  record jsonb NOT NULL
-);
--- One unsettled rollout a flag: `create` is an insert that this index can refuse.
-CREATE UNIQUE INDEX rollouts_one_unsettled_per_flag ON rollouts (flag_key) WHERE NOT settled;
--- `save` is: UPDATE rollouts SET record = $1, settled = $2, version = version + 1
---            WHERE id = $3 AND version = $4   -- and it won when one row changed.
-```
-
-## Releases across environments
-
-`createReleaser` takes one change through environments in order, each with its own rollout and its own
-trigger: `promotion` (starts when the one before releases), `deploy_signal` (your pipeline calls
-`signal(id, environment)` when the deploy lands) or `manual`. A rollback in any environment pauses
-everything that hasn't started; `resume` gives that environment a new rollout and waits for its signal
-again. `start` refuses a release with a plan that can't run or an environment named twice. A stage whose
-rollout can't start (its flag is already on, its last rollout hasn't settled) pauses the release and says
-why in `pausedBecause`.
-
-## What is not here
-
-LaunchDarkly's Release Autopilot also reads a pull request to propose a flag (auto-flagging), opens
-pull requests that remove finished flags (auto-cleanup), and hands a regression to an agent to fix.
-Those are agent work on top of this package, not part of it. `rollout_status` returns each guardrail's
-reading, which is the context a fixing agent starts from.
+See [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/design.md](docs/design.md) for why it is built this way.
+[MIT](LICENSE) licensed.

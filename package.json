@@ -2,7 +2,7 @@
   "name": "open-rollout",
   "version": "0.1.0",
   "private": true,
-  "description": "Guarded, self-driving feature flag rollouts: a pure decision core, ports for any flag provider and metric source, and bindings for durable agent runtimes.",
+  "description": "Guarded feature flag rollouts: step traffic up, watch guardrail metrics, roll back on a regression. Works with any flag provider.",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -18,6 +18,7 @@
     "type-check": "tsc --noEmit",
     "lint": "oxlint",
     "test": "vitest run",
+    "quickstart": "tsx examples/quickstart.ts",
     "sim": "SIM_RUNS=400 SIM_CHAOS_RUNS=1000 vitest run src/sim",
     "mutate": "stryker run"
   },
@@ -30,6 +31,7 @@
     "@types/node": "^22.20.5",
     "oxlint": "1.87.0",
     "oxlint-tsgolint": "7.0.2004",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.0.17"
   },
