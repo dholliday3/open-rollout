@@ -47,10 +47,6 @@ interface Chaos {
   readonly sentAt: Map<string, number>;
   /** When the metric source went down and came back. */
   readonly outages: { at: number; down: boolean }[];
-  /** When an incident opened and cleared. */
-  readonly incidents: { at: number; open: boolean }[];
-  /** When each worker last read the incident feed. */
-  readonly incidentReads: Map<string, number>;
   readonly rejected: string[];
   workers: number;
   commands: number;
@@ -123,9 +119,6 @@ function launch(chaos: Chaos): { name: string; done: Promise<void> } {
 function fate(chaos: Chaos, call: Parked): "pass" | "crash" | "stall" {
   if (call.port === "flags.write" && !chaos.wired.has(call.worker)) {
     chaos.wired.set(call.worker, chaos.bench.now);
-  }
-  if (call.port === "incidents.open") {
-    chaos.incidentReads.set(call.worker, chaos.bench.now);
   }
   if (chaos.random.chance(CRASH_CHANCE)) {
     return "crash";
@@ -206,17 +199,14 @@ async function wakeEveryZombie(chaos: Chaos): Promise<void> {
   await wakeEveryZombie(chaos);
 }
 
-/** The metric source comes back and any incident clears, each noted in its timeline for the oracle. */
+/** The metric source comes back, noted in its timeline for the oracle, and any incident clears. */
 function clearSurroundings(chaos: Chaos): void {
   const { bench } = chaos;
   if (bench.metricsDown) {
     bench.metricsDown = false;
     chaos.outages.push({ at: bench.now, down: false });
   }
-  if (bench.incident) {
-    bench.incident = false;
-    chaos.incidents.push({ at: bench.now, open: false });
-  }
+  bench.incident = false;
 }
 
 /** Everything stops going wrong: faults clear, traffic returns, and every stalled worker finishes what it was doing. */
@@ -237,8 +227,6 @@ async function runChaos(options: ChaosOptions): Promise<Chaos> {
       bench,
       commands: 0,
       gate: createGate(),
-      incidentReads: new Map<string, number>(),
-      incidents: [],
       options,
       outages: [],
       random: createRandom(options.seed),

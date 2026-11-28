@@ -37,17 +37,21 @@ A step moves on only when all of these hold:
    squares that can't go with its total, or watermark after the snapshot was taken), give every guardrail
    a reading, and no guardrail has regressed.
 5. Every guardrail with a `mustRuleOut` has a reading sharp enough to rule out a regression that large.
-6. The next gate is approved, if the plan asks for approval.
+6. Before the release only: every goal (a guardrail with `mustImproveBy`) is shown better by more than
+   that. A last step that runs out of time first ends as `onInsufficientData` says, for the reason
+   `unproven`.
+7. No incident is open, and the incident feed could be read, when the autopilot has one.
+8. The next gate is approved, if the plan asks for approval.
 
-An approval is permission, not evidence. It opens the gate on the next tick, and only if conditions 1 and
-4 still hold then: the step may have passed its watch days before the yes arrived.
+An approval is permission, not evidence. It opens the gate on the next tick, and only if conditions 1, 4,
+6 and 7 still hold then: the step may have passed its watch days before the yes arrived.
 
 Guardrails are read on every tick from the moment the new behaviour is first sent to anyone, landed or
 not, through every pause and every wait for approval, until the rollout is undone or its release is sent.
 A release whose write never goes through goes back to its gate after `propagationMs`, so the step is
 watched again.
 
-## The seven promises
+## The eight promises
 
 1. **Never more exposure than the record says.** The flag is only ever written to `record.desired`.
    Exposure above it (a stalled worker's late write, a person raising the flag by hand) is brought back
@@ -73,6 +77,11 @@ watched again.
    never as worse.
 7. **Everything converges.** After any mix of failed reads, failed writes, crashes and lost races, a few
    clean ticks bring the flag to `record.desired`, unless a person lowered it, which is reported and left.
+8. **An incident holds everything.** While the incident feed reports an open incident, or can't be read,
+   no step-up, gate or release happens and no write raises exposure. The guardrails still act, a rollback
+   still wins, a release a person forced still goes out, and the step's watch keeps running. The hold lifts
+   by itself, with one `incident_hold` and one `incident_cleared` event. A write already on the wire when
+   the incident opens still lands, as with a pause.
 
 ## What a runtime sees
 
@@ -92,7 +101,12 @@ watched again.
   command is followed by a tick, so a rollback doesn't wait for the scheduler.
 - **Events** are saved to the record's outbox before they are sent, so a crash in between sends an event
   again with the same `key`. None is lost; the notifier drops repeats by key.
-- **A forced release** (`release`) skips the checks that are left, the metric checks included.
+- **A forced release** (`release`) skips the checks that are left, the metric checks, the goals and an
+  incident's hold included.
+- **`start`** refuses a plan `planProblems` refuses, a flag already serving the new behaviour, and a flag
+  whose provider says no step can be written to it (`FlagControl.setupProblem`).
+- **`traffic(flagKey)`** gives the units an hour that evaluated the flag over the last day, or null when
+  the metric source can't say. It never throws.
 - **Agent tools** run every call they are given, whoever the `actor` is, unless
   `rolloutTools(autopilot, { authorize })` refuses it. The hook sees the tool's name, its input and the
   call (`actor`, `callKey`, `now`) before anything runs, `rollout_status` included. A refused call changes
@@ -108,6 +122,11 @@ watched again.
 | `MetricSource` | `snapshot({ flagKey, since, guardrails })` | Running totals per arm since `since`, units counted by first exposure, plus two times on the source's own clock: `asOf`, when the snapshot was taken, and `watermark`, up to when the data is complete. |
 | `RolloutStore` | `create`, `load`, `save(record, expectedVersion)`, `listUnsettled` | `save` is compare-and-set. `create` refuses a second unsettled rollout on one flag. |
 | `Notifier` | `notify(event)` | May be called twice for one event; `event.key` is stable so the receiver can drop repeats. |
+| `IncidentFeed` (optional) | `open()` | The incidents open now; an empty list is the all-clear, and a call that throws holds like an open incident. |
+
+`FlagControl.setupProblem(flagKey)` (optional) says why a flag can't take a step as it is set up; `start`
+refuses with it. `MetricSource.traffic({ flagKey, windowMs })` (optional) gives the units an hour that
+evaluated the flag over the window, whatever it served them.
 
 Everything the rollout knows about who changed the flag comes from revisions: a reading below one already
 seen is a read that is behind and is ignored; a flag still at the revision it had when a write was sent

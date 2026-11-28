@@ -94,7 +94,6 @@ function brokenSurroundings(chaos: Chaos): (() => void)[] {
       : [
           () => {
             bench.incident = !bench.incident;
-            chaos.incidents.push({ at: bench.now, open: bench.incident });
           },
         ]),
   ];

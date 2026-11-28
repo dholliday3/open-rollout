@@ -30,14 +30,21 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
 - **Ratio guardrails are slow.** An outage took a median 28 minutes and 105 people exposed on a ratio,
   against 8.6 minutes and 15 people on a rate. Guard outages with a rate too.
 - **Both arms at once.** Guardrails compare arms. A failure that hits both equally (an incident, a bad
-  deploy of something else) is not the rollout's fault and is not detected.
+  deploy of something else) is not the rollout's fault and is not detected by them. Give the autopilot an
+  `IncidentFeed` (`open-rollout/datadog` reads Datadog monitors) and every rollout holds while one is open;
+  without a feed, nothing holds it. A hold doesn't stop the step's watch, so a step that was watched all
+  through an incident moves on as soon as it clears, and one whose deadline passed during it can give up.
 - **Identities that don't stick.** When more than `maxContaminatedShare` of units are seen on both arms,
   the rollout pauses as `contaminated` and reads nothing else: units seen on both arms are left out of
   both, so neither the guardrails nor the arms' sizes mean anything.
 - **"Rolled back" means the provider serves the flag off.** `propagationMs` is how long a flag change takes
-  to reach every evaluator. An app holding an older copy of the flag catches up when it next fetches it.
-  In simulation, phones with a cached flag were still on the new behaviour for some minutes after a
-  rollback.
+  to reach every evaluator. An app holding an older copy of the flag catches up when it next fetches it,
+  and the `rolled_back` event says so. In simulation, phones with a cached flag were still on the new
+  behaviour for some minutes after a rollback. For a mobile app, set `limits.propagationMs` to how long the
+  app takes to pick up a change, so each step is watched from when phones have it. Crash rates per arm
+  need each crash tied to the arm it ran on: crashes sent to PostHog are matched to the person's first
+  exposure; crashes in Crashlytics need the variant set as a custom key, and a metric source over its
+  BigQuery export, which is not built.
 - **After a rollback**, for `settleMs`, any exposure is turned off again, a person's included. Start a new
   rollout to turn the flag back on.
 - **Clocks.** A worker whose clock is wrong by more than `maxStalenessMs` reads fresh metrics as stale and
@@ -45,10 +52,16 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   wrong clock moves them by its error. A step's watch runs on the metric source's clock and the workers'
   at once, so one wrong clock can make it longer and never shorter; both wrong the same way could shorten
   it. A plan with no guardrails has no metric source, so its steps are timed on worker clocks alone.
-- **Quiet products.** A step needs `minFreshUnits` new units per arm within `maxDurationMs`. The standard
-  medium plan needs about 85 new units a minute across the product; below that its rollouts pause for too
-  little data. `standardPlan({ overrides: { everyStep: { minFreshUnits, minDurationMs } } })` asks for
-  fewer units over longer steps. Counting accounts rather than people (`unit: { groupTypeIndex }` on the
+- **Quiet products, and quiet paths.** A unit counts only once its request evaluates the flag, so a fix on
+  a path few people reach gathers units slowly. A step needs `minFreshUnits` new units per arm within
+  `maxDurationMs`. The standard medium plan needs about 85 new units a minute across the product; below
+  that its rollouts pause for too little data. `standardPlan({ unitsPerHour })` stretches each step to
+  the time its units take to arrive, `forecast` says how long that comes to, `rollout_start` sizes to the
+  traffic the metric source measures and refuses a flag nobody evaluates, and `planProblems` refuses a step
+  that could wait longer than the rollout's expiry. A path too quiet for that is one to ship without a
+  flag. The traffic is a day's average: a step that falls in a quiet night takes longer.
+  `standardPlan({ overrides: { everyStep: { minFreshUnits, minDurationMs } } })` asks for fewer units over
+  longer steps. Counting accounts rather than people (`unit: { groupTypeIndex }` on the
   PostHog source) makes this much sharper: a B2B product may gain a few accounts a day. Give such a plan
   a `minFreshUnits` and `limits.minUnitsToJudge` it can reach and steps measured in days, and expect only
   large regressions to be caught, because tens of accounts an arm leave the interval wide.
@@ -58,20 +71,40 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   deadline that much more room, and `planProblems` refuses a plan whose `limits.sourceLagMs` leaves a step
   no time. A plan that doesn't know about the lag reads hour-old metrics as stale: it holds where it is and
   reports `metrics_outage`. Units the previous step exposed in its last `sourceLagMs` count toward the next
-  step's `minFreshUnits`, because the next step's count starts from data that is that far behind.
+  step's `minFreshUnits`, because the next step's count starts from data that is that far behind. The same
+  happens to any exposure that arrives after the source's watermark said the data was complete: it counts
+  as new in the step that sees it. On a small simulated product whose steps were sized to gather exactly
+  50 people an arm, 4 of 100 rollouts moved on from a step with 49 truly new people on one arm; on the
+  same steps before goals and traffic sizing existed, the same 4 seeds did the same.
+
+- **A goal makes the last step wait, and watching longer costs false alarms.** The last step is watched
+  until every goal is shown better or its deadline passes. Healthy code on the medium plan was rolled back
+  for a regression in 4.7% [2.8, 7.7] of simulated rollouts with a goal, against 3.0% [1.6, 5.6] without;
+  a last step watched for two hours without a goal gave the same 4.7%. Why a longer watch costs more is
+  not settled; a likely cause is that a unit's outcome keeps changing as it comes back, which the test
+  assumes it doesn't. [evaluation.md](evaluation.md) has the numbers.
+- **A fix for a rare bug is often left unproven.** A fix that halved an error one request in 10,000 has was
+  shown to work before its deadline in 34% of simulated rollouts; the rest paused as `unproven` for a
+  person to release, keep watching or roll back.
 
 ## Not verified
 
-- No real rollout has run on open-rollout. Every number in these docs is from simulation.
-- No real PostHog flag has been written by `createPostHogFlags`. Its tests use a fake that enforces
-  versions the way PostHog's docs describe.
-- The PostHog metric queries were run read-only against a live project and parse; that is all.
+- No rollout with real people on it has run on open-rollout. Every number in these docs is from
+  simulation.
+- `createPostHogFlags` has written real flags: `pnpm live:posthog` made throwaway flags in a PostHog Cloud
+  project on 2026-11-27, wrote steps, a release and a rollback, was refused a stale write, ran a whole
+  low-risk rollout (guardrails read from memory), and deleted them.
+- The PostHog metric and traffic queries were run read-only against a live project and parse, on a flag
+  nobody evaluates; no real exposure has been counted by them.
+- The Datadog incident feed has not been run against Datadog. Its tests use a fake that answers the way
+  the monitors API is documented to.
 
 ## Not built
 
 - A database-backed store. [guarantees.md](guarantees.md#a-postgres-store) has the one-table Postgres
   shape; the package ships an in-memory store.
-- Flag adapters for providers other than PostHog.
+- Flag adapters for providers other than PostHog, such as GrowthBook.
+- A metric source over Crashlytics (or any warehouse table), for crash rates per arm.
 - Percentile metrics (P99 latency). Use a `rate` of "slower than the budget" instead.
 - Proposing a flag from a pull request, opening pull requests that remove finished flags, and handing a
   regression to an agent to fix. These are agent work on top of this package; `rollout_status` returns

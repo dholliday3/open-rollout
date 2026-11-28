@@ -1,8 +1,9 @@
 # Evaluation
 
-Every number on this page is from simulation, run on the code at import. No real rollout has used
-open-rollout yet, and no real PostHog flag has been written by its adapter. The simulation is in `src/sim`;
-`pnpm sim` reruns it at full size (it takes a while).
+Every number on this page is from simulation, run on the code at import unless a section says otherwise.
+No rollout with real people on it has used open-rollout yet; its PostHog adapter has written real flags
+([below](#against-a-real-posthog-project)). The simulation is in `src/sim`; `pnpm sim` reruns it at full
+size (it takes a while).
 
 Intervals in brackets are Wilson 95% intervals for the share.
 
@@ -36,8 +37,10 @@ people edit the flag and send commands.
 | Provider that does not check revisions, then calm | The same |
 | No people at the console; a person says yes | Every rollout ends |
 | People at the console, no revision checks, clocks apart | Every rollout ends once people stop and say yes |
+| Incidents come and go (added 2026-11-27) | The safety promises, and no write raises exposure after its worker read an open incident |
+| Incidents come and go, no people at the console; a person says yes | Every rollout ends |
 
-No safety promise broke. One run hit the known stale-write limit: on a provider that can't refuse stale
+No safety promise broke. The incident check was seen to fail, as it should, with the hold switched off. One run hit the known stale-write limit: on a provider that can't refuse stale
 writes, a worker stalled 18 minutes inside a write landed an old step 3 seconds after its rollback settled
 ([limits.md](limits.md)).
 
@@ -92,6 +95,53 @@ What to take from this: outages are caught in minutes with a handful of people e
 are caught, at the cost of the time each step watches. Small ones (1.25x) mostly pass unless a guardrail
 sets `mustRuleOut`. Ratio guardrails are slow, so pair them with a rate.
 
+## Goals: shipping a fix
+
+Added 2026-11-27. The bug's error (`errors`, a rate) as a goal and a guardrail (`mustImproveBy: 0`), on the
+standard medium plan, in the same simulated production. "Released" means shown to work and released.
+
+| The change… | Rollouts | Released | Unproven at the last step | Other endings |
+|---|---|---|---|---|
+| Fixes nothing | 300 | 0.7% (2) | 284 | 14 false regressions |
+| Halves the error | 100 | 100% | 0 | |
+| Halves the error, a small product (25 visits a minute) | 100 | 0% | 0 | 100 paused for too little data |
+| The same, steps sized to its traffic (`unitsPerHour: 388`) | 100 | 22% | 78 | |
+| Halves an error one request in 10,000 has | 100 | 34% | 66 | |
+
+The budget for releasing a change that fixes nothing is `limits.goalAlpha` = 5%. A small product doesn't
+get through the standard plan's steps at all; sized to its traffic it does, and then the evidence is what
+limits it: 388 people an hour aren't many to show a halved error on.
+
+Waiting for a goal keeps the last step watched until its deadline when the change fixed nothing, and
+watching longer costs false alarms on the guardrails. Healthy code, medium plan, the same 300 seeds:
+
+| Plan | False "regression" rate |
+|---|---|
+| Standard | 3.0% [1.6, 5.6] |
+| A last step watched at least two hours, no goal | 4.7% [2.8, 7.7] |
+| A goal | 4.7% [2.8, 7.7] |
+
+The small product with sized steps also showed the late-exposure gap in [limits.md](limits.md): 4 of 100
+rollouts moved on from a step with 49 truly new people on an arm against 50 asked. The same plan on the
+code before this work did the same on the same seeds.
+
+## Against a real PostHog project
+
+On 2026-11-27, `pnpm live:posthog` ran against a PostHog Cloud project, on flags it made for the run and
+deleted after. All of it passed:
+
+- Reads a new flag as serving nobody; writes a 1% step and reads back the version the write returned.
+- Is refused (409) a write from a stale version, and the flag is left as it was; writes nothing to a flag
+  already at the step.
+- Releases with `roll_out_to_everyone` and turns everybody off again.
+- Runs a whole low-risk rollout (start, 10%, 50%, release) through the autopilot, guardrails read from
+  memory.
+- Runs the snapshot, freshness and traffic queries on a flag nobody evaluates.
+
+It found one bug: a release adds a second condition and rewrites the split to 0/100, so a later rollout on
+the same flag could never write a step and sat in `ramping` until it expired. `start` now refuses such a
+flag with what is wrong.
+
 ## Adversarial review
 
 A separate agent, given only the README of the time and none of the implementation's reasoning, built the
@@ -112,8 +162,8 @@ Stryker on `decide`, `reconcile`, `progress`, `guard` and `write`: 608 of 659 mu
 
 ## Not verified
 
-- **The PostHog flag adapter has never written a real PostHog flag.** Its tests run against a fake that
-  enforces versions the way PostHog's docs describe.
-- **The two HogQL queries** (the snapshot and its freshness check) were run read-only against a live
-  PostHog project on 2026-11-21 and parse.
-- **No real rollout has run.** Everything above is simulation.
+- **The PostHog queries have counted no real exposure.** They were run read-only against a live project on
+  2026-11-21 and 2026-11-27 and parse, on flags nobody evaluates.
+- **The Datadog incident feed has not been run against Datadog.**
+- **No rollout with real people on it has run.** Everything above but the live PostHog run is
+  simulation.

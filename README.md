@@ -8,8 +8,8 @@ step, checks your metrics at every step, and rolls back on its own when the new 
 
 Use your own flag provider, analytics and job runner. PostHog adapters are included.
 
-> **Status:** pre-1.0, not on npm yet. Tested in simulation; no production rollout has used it.
-> [Details](#project-status)
+> **Status:** pre-1.0, not on npm yet. Tested in simulation, and its PostHog adapter against a real PostHog
+> project; no production rollout has used it. [Details](#project-status)
 
 ## Why open-rollout
 
@@ -21,8 +21,10 @@ Use your own flag provider, analytics and job runner. PostHog adapters are inclu
   16,000 chaotic simulation runs broke none of its guarantees.
 - **No vendor lock-in.** Flags, metrics, storage and scheduling stay yours. Moving to another flag
   provider means writing one adapter.
-- **Ready for AI agents.** Seven tools with zod schemas let an agent start, check, pause, approve or
-  roll back a rollout.
+- **Proves a fix worked.** Make the bug's own error a goal and the release waits until the new code is
+  shown to have less of it. A change that fixed nothing was released as a fix in 0.7% of simulated runs.
+- **Ready for AI agents.** Eight tools with zod schemas let an agent forecast, start, check, pause,
+  approve or roll back a rollout.
 
 ### Without it, and with it
 
@@ -133,15 +135,19 @@ flowchart LR
 | `high` | 1%, 5%, 10%, 25%, 50% | 30 min to 4 h | yes, before release |
 
 A guardrail is `{ metric, kind, direction, tolerance, onRegression }`, where `kind` is `rate`, `mean` or
-`ratio`. Plans are plain objects, so you can write your own and check them with `planProblems(plan)`.
+`ratio`. Give one `mustImproveBy` and it is also a goal: the release waits until the new code is shown
+better on it by more than that ([statistics](docs/statistics.md#goals-proving-a-fix-worked)). Plans are
+plain objects, so you can write your own and check them with `planProblems(plan)`.
 
-Two options adjust a standard plan: `sourceLagMs` for metrics that run behind, such as a warehouse
-loaded hourly, and `overrides` for its steps, limits and policies, such as fewer units and longer steps
-for a product with few accounts.
+Three options adjust a standard plan: `sourceLagMs` for metrics that run behind, such as a warehouse
+loaded hourly; `unitsPerHour`, the people (or accounts) an hour that reach the flag, which stretches each
+step to the time its units take to arrive; and `overrides` for its steps, limits and policies.
+`forecast(plan, unitsPerHour)` says how long a plan takes on that traffic, and which step can't get
+through.
 
 ## Real-world examples
 
-Six problems, solved with the current API. Each snippet is a slice of
+Nine problems, solved with the current API. Each snippet is a slice of
 [`examples/recipes.ts`](examples/recipes.ts), and [`examples/recipes.test.ts`](examples/recipes.test.ts)
 runs them against the quickstart's simulated traffic or a fake.
 
@@ -355,6 +361,102 @@ each user once, so a bigger share keeps everyone who was in.
 
 </details>
 
+<details>
+<summary><b>Shipping a bug fix, and proving it fixed the bug</b></summary>
+
+<br>
+
+**By hand:** the fix ships, someone watches the bug's graph for a day, and nobody can say whether the dip
+was the fix or a quiet weekend. A fix on a path few people reach never gets through a rollout timed in
+minutes.
+
+```ts
+async function bugFix(autopilot: Autopilot): Promise<RolloutPlan | null> {
+  const unitsPerHour = await autopilot.traffic(BUG_FLAG);
+  const plan = standardPlan({
+    flagKey: BUG_FLAG,
+    risk: "low",
+    guardrails: [
+      { metric: "double_charged", kind: "rate", direction: "lower_is_better", tolerance: 0,
+        mustImproveBy: 0, onRegression: "rollback" },
+      { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0,
+        onRegression: "rollback" },
+    ],
+    unitsPerHour: unitsPerHour ?? undefined,
+  });
+  const tooQuiet = unitsPerHour === null || forecast(plan, unitsPerHour).problems.length > 0;
+  return tooQuiet ? null : plan;
+}
+```
+
+**What happens:** `autopilot.traffic` counts the people who evaluated the flag over the last day (PostHog's
+`$feature_flag_called`, whatever it served them), and each step lasts as long as its people take to
+arrive. Double charges are a goal and a guardrail: worse rolls back, and the release waits until they are
+shown rarer on the fix. A change that left them as they were stops at its last step as `unproven`. On a
+path too quiet for the plan, `bugFix` answers `null`: ship the fix without a flag, and watch it with your
+monitors.
+
+</details>
+
+<details>
+<summary><b>A mobile app, where phones keep a copy of the flag</b></summary>
+
+<br>
+
+**By hand:** a phone uses the flag it fetched last time, so a rollback reaches it only when it next
+fetches, and a step is in force on phones well after the provider changed.
+
+```ts
+const onboardingPlan = standardPlan({
+  flagKey: "onboarding-v3-ios",
+  risk: "medium",
+  guardrails: [
+    { metric: "crashed", kind: "rate", direction: "lower_is_better", tolerance: 0,
+      onRegression: "rollback" },
+  ],
+  overrides: { limits: { propagationMs: 30 * MINUTE } },
+});
+```
+
+**What happens:** each step's watch starts half an hour after the flag changes, about how long the app
+takes to pick a change up, and a build that crashes on one in five people is rolled back. The
+`rolled_back` event says the provider serves the flag off and that phones switch when they next fetch
+it. Crashes need to reach the metric source with the arm they ran on: crashes sent to PostHog are matched
+to each person's first exposure; with Crashlytics, set the variant as a custom key and read crashes per
+key from its BigQuery export (no adapter for that is included).
+
+</details>
+
+<details>
+<summary><b>Hold every rollout while a Datadog monitor alerts</b></summary>
+
+<br>
+
+**By hand:** an incident hits the new and old code alike, so a rollout's guardrails see nothing and it
+keeps stepping up in the middle of the incident.
+
+```ts
+function datadogHold(keys: { api: string; app: string }): IncidentFeed {
+  return createDatadogIncidents({
+    monitorTags: ["open-rollout:hold"],
+    transport: async (call) => {
+      const response = await fetch(new URL(call.path, "https://api.datadoghq.com"), {
+        headers: { "DD-API-KEY": keys.api, "DD-APPLICATION-KEY": keys.app },
+        signal: AbortSignal.timeout(10_000),
+      });
+      return { status: response.status, body: response.ok ? await response.json() : null };
+    },
+  });
+}
+```
+
+**What happens:** pass it as `incidents` to `createAutopilot`. While a monitor tagged `open-rollout:hold`
+is in alert, or Datadog can't be read, every rollout holds where it is: no step up, no release. Its
+guardrails still roll it back, the step's watch keeps running, and it carries on by itself when the
+monitor recovers. Tag the monitors that watch the whole product.
+
+</details>
+
 ## Using it in production
 
 ### Run ticks from your scheduler
@@ -388,12 +490,20 @@ People and services steer a rollout with `autopilot.command(id, command, now)` (
    your PostHog group type (`$group_0` to `$group_4`).
 
 Every write carries the flag's version, so PostHog itself rejects a late write from a stalled worker.
+`pnpm live:posthog` runs the adapters against your own project on throwaway flags, and deletes them.
+
+A release to everybody adds a second condition and gives `treatment` 100% of the split. Before rolling
+the same flag out again, put back one condition and the 50/50 split; a rollout started without that is
+refused with what is wrong.
 
 ### Give an AI agent the controls
 
-`rolloutTools(autopilot)`, from `open-rollout/tools`, returns `rollout_start`, `rollout_status`,
-`rollout_pause`, `rollout_resume`, `rollout_rollback`, `rollout_approve` and `rollout_release`, each with a
-zod input schema. They wrap into an AI SDK tool or an MCP server in a few lines.
+`rolloutTools(autopilot)`, from `open-rollout/tools`, returns `rollout_forecast`, `rollout_start`,
+`rollout_status`, `rollout_pause`, `rollout_resume`, `rollout_rollback`, `rollout_approve` and
+`rollout_release`, each with a zod input schema. They wrap into an AI SDK tool or an MCP server in a few
+lines. `rollout_start` sizes its steps to the flag's traffic when the metric source can measure it, and
+refuses a flag nobody evaluates; `rollout_forecast` says how long a rollout would take without starting
+one.
 
 ```ts
 async function rollBackCheckout(autopilot: Autopilot): Promise<ToolAnswer> {
@@ -417,7 +527,7 @@ then production. A rollback in one environment holds the ones that haven't start
 
 ## Adapters
 
-open-rollout talks to the outside world through four small interfaces:
+open-rollout talks to the outside world through four small interfaces, and an optional fifth:
 
 | Interface | Its job | Included |
 |---|---|---|
@@ -425,6 +535,7 @@ open-rollout talks to the outside world through four small interfaces:
 | `MetricSource` | Totals for the new and old code since a time | Memory, PostHog (HogQL) |
 | `RolloutStore` | Save each rollout with compare-and-set | Memory, plus a [one-table Postgres design](docs/guarantees.md#a-postgres-store) |
 | `Notifier` | Send rollout events wherever you want them | Memory |
+| `IncidentFeed` (optional) | Incidents open across the product; while one is, rollouts hold | Datadog monitors |
 
 Another flag provider needs only a `FlagControl`: a revision number that goes up on every change, and
 sticky percentage bucketing.
@@ -438,6 +549,7 @@ sticky percentage bucketing.
 5. One flag write per decision; a command sent twice is applied once.
 6. The false-alarm rate holds however often it looks.
 7. After any mix of failures, a few clean ticks put the flag where it should be.
+8. Nothing moves forward while an incident is open, or the incident feed can't be read.
 
 Each promise, and what it rests on: [docs/guarantees.md](docs/guarantees.md).
 
@@ -461,7 +573,11 @@ Healthy code was flagged as worse in 0.3% to 3% of rollouts across ten settings,
 - **Ratio guardrails are slower.** An outage took a median 28 minutes to catch on one, against 8.6 on a
   rate.
 - **Rolled back means the provider serves the flag off.** Apps holding a cached flag catch up on their
-  next fetch.
+  next fetch. For a mobile app, set `limits.propagationMs` to how long the app takes to pick up a change.
+- **A goal makes the last step wait.** Watching longer costs some false alarms: healthy code was rolled
+  back in 4.7% of medium-plan runs with a goal, against 3.0% without.
+- **A guardrail can't see an incident that hits both arms.** Give the autopilot an `IncidentFeed` so
+  rollouts hold during one.
 - **Providers that can't reject a stale write** have one rare gap: a worker frozen mid-write for over 10
   minutes can land an old step. PostHog rejects such writes.
 
@@ -484,9 +600,14 @@ new minus old, and a sample ratio check.
 
 - **Built and tested:** the decision core, the tick loop, the statistics, in-memory adapters, agent tools
   and multi-environment releases.
-- **Not yet proven against the real service:** the PostHog flag adapter has never written a real flag.
-  Its tests use a fake that enforces versions the way PostHog's docs describe.
-- **Not built:** a database-backed store, adapters for other providers, and percentile metrics.
+- **Run against the real service:** the PostHog adapters, on throwaway flags in a real PostHog project
+  (2026-11-27): steps, a refused stale write, a release, a rollback and a whole low-risk rollout. No
+  rollout with real people on it has run yet; start with a `low` plan on a harmless flag, with a person
+  watching.
+- **Not run against the real service:** the Datadog incident feed. Its tests use a fake that answers the
+  way Datadog's monitors API is documented to.
+- **Not built:** a database-backed store, adapters for other flag providers, a Crashlytics metric source,
+  and percentile metrics.
 - **May change:** any API, before 1.0.
 
 <details>
@@ -498,8 +619,9 @@ The package is compiled JavaScript with type declarations, built when it is inst
 
 - It is ES modules only. Plain `node` runs it; CommonJS code can `require()` it, which Node 22.12 and
   later allow for ES modules.
-- Three entry points: `open-rollout` (the core, which loads no other package), `open-rollout/posthog`
-  and `open-rollout/tools`. The one runtime dependency is zod 4, loaded only by the last two.
+- Four entry points: `open-rollout` (the core, which loads no other package), `open-rollout/posthog`,
+  `open-rollout/datadog` and `open-rollout/tools`. The one runtime dependency is zod 4, loaded only by
+  the last three.
 - TypeScript needs `"moduleResolution"` set to `node16`, `nodenext` or `bundler`. The types compile with
   `strict`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature` and
   `noUncheckedIndexedAccess` on and `skipLibCheck` off.

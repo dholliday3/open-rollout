@@ -167,10 +167,6 @@ function guardrailProblems(guardrails: readonly Guardrail[]): string[] {
   return new Set(names).size === names.length ? problems : [...problems, "Each metric can guard a rollout once."];
 }
 
-function minutes(ms: number): string {
-  return `${ms / MS_PER_MINUTE} minutes`;
-}
-
 /**
  * A step passes once the metrics have caught up with its whole watch, which takes the source's lag longer
  * than the watch itself. Metrics older than the staleness limit are never read, and a step past its
@@ -181,11 +177,11 @@ function lagProblems(plan: RolloutPlan): string[] {
   if (!isAmount(lag, 1) || plan.guardrails.length === 0) {
     return [];
   }
-  const stale = plan.limits.maxStalenessMs > lag ? [] : [`Metrics that run ${minutes(lag)} behind are always older than maxStalenessMs, so the rollout would never read them. Make it more than the lag.`];
+  const stale = plan.limits.maxStalenessMs > lag ? [] : [`Metrics that run ${duration(lag)} behind are always older than maxStalenessMs, so the rollout would never read them. Make it more than the lag.`];
   return [
     ...stale,
     ...plan.steps.flatMap((step, index) =>
-      step.maxDurationMs - step.minDurationMs > lag ? [] : [`Step ${index + 1} gives up before metrics that run ${minutes(lag)} behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.`],
+      step.maxDurationMs - step.minDurationMs > lag ? [] : [`Step ${index + 1} gives up before metrics that run ${duration(lag)} behind can cover its watch. Give it a maxDurationMs more than the lag past its minDurationMs.`],
     ),
   ];
 }

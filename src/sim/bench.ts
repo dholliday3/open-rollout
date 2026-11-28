@@ -29,6 +29,8 @@ interface Bench {
   /** A monitoring system's incidents, when the bench has one; `incident` says whether one is open. */
   readonly incidents?: IncidentFeed;
   incident: boolean;
+  /** What each worker's last read of the incident feed answered: true when an incident was open. */
+  readonly incidentSeen: Map<string, boolean>;
   now: number;
   /** Units a minute across all traffic. */
   perMinute: number;
@@ -160,6 +162,7 @@ function partsOf(options: BenchOptions): Parts {
     errorRate: { control: BASE_ERROR_RATE, treatment: BASE_ERROR_RATE },
     flags: provider.controlFor("autopilot"),
     incident: false,
+    incidentSeen: new Map<string, boolean>(),
     lagMs: 0,
     marks: new Map<number, Seen>(),
     metricReads: 0,
@@ -235,9 +238,26 @@ async function send(bench: Bench, command: Command): Promise<string> {
   return outcome.status;
 }
 
+/** The bench's incident feed as one worker reads it, noting what each read answered when it really ran. */
+function incidentsSeenBy(bench: Bench, name: string): Pick<Ports, "incidents"> {
+  const feed = bench.incidents;
+  if (feed === undefined) {
+    return {};
+  }
+  return {
+    incidents: {
+      open: async () => {
+        const open = await feed.open();
+        bench.incidentSeen.set(name, open.length > 0);
+        return open;
+      },
+    },
+  };
+}
+
 /** Another worker on the same world, with its own name in the provider's list of changes and its port calls behind a gate. */
 function gatedWorker(bench: Bench, gate: Gate, name: string): Autopilot {
-  const ports: Ports = { flags: bench.provider.controlFor(name), metrics: bench.metrics, notifier: bench.notifier, store: bench.store, ...(bench.incidents === undefined ? {} : { incidents: bench.incidents }) };
+  const ports: Ports = { flags: bench.provider.controlFor(name), metrics: bench.metrics, notifier: bench.notifier, store: bench.store, ...incidentsSeenBy(bench, name) };
   return createAutopilot(gate.portsFor(name, ports));
 }
 

@@ -39,8 +39,8 @@ const monitorSchema = z.object({ id: z.number(), name: z.string(), overall_state
 type Monitor = z.infer<typeof monitorSchema>;
 
 async function page(options: DatadogIncidentsOptions, index: number): Promise<Monitor[]> {
-  const query = new URLSearchParams({ monitor_tags: options.monitorTags.join(","), page: String(index), page_size: String(PAGE_SIZE) }),
-    call: DatadogCall = { method: "GET", path: `/api/v1/monitor?${query.toString()}` },
+  const query = `monitor_tags=${encodeURIComponent(options.monitorTags.join(","))}&page=${index}&page_size=${PAGE_SIZE}`,
+    call: DatadogCall = { method: "GET", path: `/api/v1/monitor?${query}` },
     reply = await options.transport(call);
   if (reply.status < OK_FROM || reply.status >= OK_BELOW) {
     throw new Error(`Datadog answered ${reply.status} to GET ${call.path}.`);

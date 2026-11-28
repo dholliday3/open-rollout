@@ -65,6 +65,28 @@ were caught in only 35% of rollouts. Give a guardrail a `mustRuleOut` and a step
 regression that large is outside the interval. A step that can't get there within its `maxDurationMs` ends
 as `onInsufficientData` says.
 
+## Goals: proving a fix worked
+
+Guardrails only look for harm. A bug fix should also be shown to work, or a change that did nothing is
+released as a fix. Give the bug's own error `mustImproveBy` and it is a goal as well as a guardrail: the
+release waits until the new behaviour is shown better by more than that, which is the same confidence
+sequence pointed the other way. For `lower_is_better` the interval's upper end must be below
+`-mustImproveBy`; for `higher_is_better` its lower end above it. 0 asks only that it is better.
+
+- The call has its own error budget, `limits.goalAlpha` (default 0.05): the chance, over a whole rollout,
+  that a change which does nothing is called better on any goal. Each goal gets an equal part of it.
+- The evidence is everything since the rollout began, across its steps, so the goal is usually proven at
+  the last step, where the arms are largest. Only the release waits for it; earlier steps don't.
+- A last step that reaches its deadline with a goal unproven ends as `onInsufficientData` says (the
+  standard plans pause) for the reason `unproven`, with both arms' readings in the detail. A resume watches
+  the step again on the same evidence; a forced release ships it anyway.
+- An approval of the release opens the gate only if every goal is still shown better on that tick.
+
+In simulation a change that fixed nothing was released as a fix in 0.7% of 300 rollouts. A fix that
+halved a common error was shown to work in 100 of 100; one that halved an error on one request in 10,000
+in 34 of 100 ([evaluation.md](evaluation.md)). Waiting at the last step costs some false alarms on the
+guardrails, as any longer watch does: 4.7% against 3.0% on the medium plan.
+
 ## Sample ratio check
 
 Both arms get equal shares, so their sizes should match. When units go missing unevenly (the new arm
@@ -87,7 +109,16 @@ Units seen on both arms (identities that merged at login) are left out of both. 
 
 Each step needs `minFreshUnits` new units on each arm within its `maxDurationMs`. The standard medium plan
 starts at 1% a side and asks for 50 new units a side within an hour, which is about 85 new units a minute
-across the whole product. Below that, lower `minFreshUnits`, lengthen the steps (`standardPlan`'s
-`overrides.everyStep` does both), start at a larger share, or pick a busier unit. In simulation, on a
+across the whole product. A unit is counted only once it evaluates the flag, so what matters is the
+traffic on the path behind the flag, not the product's.
+
+`forecast(plan, unitsPerHour)` gives each step's expected time at that much traffic (its units arrive at
+`unitsPerHour × share` an hour on each arm) and says which step can't gather its units before it gives
+up, or would take longer than the rollout may go without progress. `standardPlan({ unitsPerHour })`
+makes each step at least that long. `MetricSource.traffic` measures it: the PostHog source counts the
+units that sent `$feature_flag_called` for the flag over the last day, whatever it served them, so it can
+be measured before the rollout starts, once the code that checks the flag is deployed. Otherwise lower
+`minFreshUnits`, lengthen the steps (`standardPlan`'s `overrides.everyStep` does both), start at a larger
+share, pick a busier unit, or ship the change without a flag. In simulation, on a
 product with 25 visits a minute, a doubled error rate was caught in none of 100 rollouts: they paused for
 too little data, which is what the standard plans do instead of rolling back.

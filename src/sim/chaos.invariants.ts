@@ -166,17 +166,12 @@ function raisedWhilePaused(chaos: Chaos): string[] {
   return problems;
 }
 
-function incidentWasOpen(chaos: Chaos, at: number): boolean {
-  return lastWhere(chaos.incidents, (incident) => incident.at <= at)?.open ?? false;
-}
-
-/** Nothing the library sends raises exposure when its worker read the incident feed while an incident was open, unless a person forced a release. */
+/** Nothing the library sends raises exposure when its worker's read of the incident feed answered with an open incident, unless a person forced a release. */
 function raisedDuringIncident(chaos: Chaos): string[] {
   const changes = chaos.bench.provider.changes(FLAG_KEY);
   return changes.flatMap((change, index) => {
-    const previous = changes.at(Math.max(0, index - 1)) ?? change,
-      readAt = chaos.incidentReads.get(change.by);
-    if (isPerson(change) || change.allocation.treatment <= previous.allocation.treatment || readAt === undefined || !incidentWasOpen(chaos, readAt) || forced(chaos, change.at)) {
+    const previous = changes.at(Math.max(0, index - 1)) ?? change;
+    if (isPerson(change) || change.allocation.treatment <= previous.allocation.treatment || chaos.bench.incidentSeen.get(change.by) !== true || forced(chaos, change.at)) {
       return [];
     }
     return [`hold: ${change.by} raised the flag from ${previous.allocation.treatment} to ${change.allocation.treatment} after reading an open incident`];

@@ -2,7 +2,8 @@
 
 Why open-rollout is shaped the way it is, and what attacking it taught. The [README](../README.md) has the overview and examples, [guarantees.md](guarantees.md) the contract, [statistics.md](statistics.md) the test, and [evaluation.md](evaluation.md) the numbers.
 
-Nothing in production uses it yet, and no PostHog flag has been written by it.
+Nothing in production uses it yet. Its PostHog adapter has written real flags, on throwaway flags in a
+real project ([evaluation.md](evaluation.md#against-a-real-posthog-project)).
 
 ## The decisions
 
@@ -16,6 +17,24 @@ Nothing in production uses it yet, and no PostHog flag has been written by it.
 - **Evidence is counted on the metric source's clock, and the workers' clock has to agree.** A step moves on when the metrics' watermark covers the step's watch, the step has been in force that long by the workers' clock too, and each arm has gained new units during it. Wall-clock time alone would walk a rollout to 100% overnight with nobody on the site. Either clock alone can be wrong or be put right in the middle of a step.
 - **No answer is never good news.** A failed read, stale metrics, a missing metric, a NaN or a guardrail too thin to read all hold the rollout. The first version let a garbage snapshot through as healthy.
 - **More exposure than the record says is never left standing; less is a person's call.** Someone lowering the flag by hand pauses the rollout and is left alone. Anything raising it (a stalled worker's late write, a person) is brought back down, including for `settleMs` after a rollback.
+- **A fix is shown to work before it is released, by the same test pointed the other way.** Guardrails only
+  look for harm, so a change that fixed nothing passed as one that did. A guardrail with `mustImproveBy` is
+  also a goal: the release waits until its interval is wholly on the better side. Making it a guardrail
+  rather than a separate list means the source already fetches it and a fix that makes the bug worse rolls
+  back; the improvement call gets its own error budget, because calling a non-fix a fix is a different
+  mistake from calling healthy code worse. Only the release waits for it, since a 1% step can't show an
+  improvement and the evidence carries across steps anyway.
+- **A step is sized to the traffic that reaches the flag, not the product's.** A unit counts only once its
+  request evaluates the flag, so a fix on a quiet path stalls in steps timed in minutes. The metric source
+  can count the units that evaluated the flag over a day (before anyone is on it, since an off flag is still
+  evaluated), each step is stretched to the time its units take, and a plan whose steps would outlast the
+  rollout's expiry is refused up front: that path is one to ship without a flag.
+- **An incident holds, from a feed the tick reads, not a command someone sends.** An incident hits both
+  arms, so no guardrail sees it. A tick reads an optional incident feed after the metrics, and while one is
+  open (or the feed can't be read) nothing moves forward. Pulled on every tick, the hold needs no state of
+  its own to get stuck in and lifts when the monitor recovers; a pushed "hold everything" command would need
+  someone to send the matching "carry on". The watch keeps running and the guardrails keep acting, so a hold
+  only ever stops exposure going up.
 - **An approval is a command on the record, not a parked turn.** A rollout that needs a yes sits in `awaiting_approval` while the conversation carries on. An agent's draft never holds the conversation, and neither does a rollout.
 
 ## What attacking it found
@@ -41,14 +60,14 @@ The third round's 2,000 chaotic runs found one failure the package doesn't fix: 
 
 PostHog is the first provider with an adapter. It needs a multivariate flag with `control` and `treatment` at 50/50 and one release condition with no filters.
 
-- A step is `set_release_condition_rollout` to twice the step's share. A rollback sets every condition to 0. A release is `roll_out_to_everyone` with `variant_key: "treatment"`.
+- A step is `set_release_condition_rollout` to twice the step's share. A rollback sets every condition to 0. A release is `roll_out_to_everyone` with `variant_key: "treatment"`, which adds a condition at 100% above the old one and rewrites the split to 0/100, so a released flag needs one condition and 50/50 put back before it can be rolled out again; `start` asks the adapter (`setupProblem`) and refuses until it is.
 - Both calls take the flag's `version` and answer 409 when the flag changed after it. So PostHog itself refuses a stalled worker's late write. The plain `PATCH` with `filters` checks the version only on flags whose `filters.version` is 2, and replaces the whole `filters` object, so the adapter never uses it.
 - `version` goes up by one on every saved edit. That is the ordered revision the package's whole notion of "who changed the flag" rests on.
 - PostHog hashes "is this person in" and "which variant" separately, so raising the percentage keeps everyone who was in and never moves anyone between variants.
 - Server SDKs poll flag definitions every 30 seconds by default. `limits.propagationMs` (60 seconds) is that, doubled.
 - Exposure is the `$feature_flag_called` event (`$feature_flag`, `$feature_flag_response`). The metric source is one HogQL query; it and its freshness query were run against a live PostHog project on 2026-11-21 and parse.
 - The unit is a person (`person_id`), or with `unit: { groupTypeIndex }` a group such as a B2B account: the events' `$group_0` to `$group_4`, leaving out events sent without that group. The group form of the query was run against a live project on 2026-11-22 and parses.
-- These facts come from the descriptions of PostHog's own MCP server tools, read on 2026-11-21.
+- These facts come from the descriptions of PostHog's own MCP server tools, read on 2026-11-21, and were checked against PostHog Cloud on 2026-11-27 by `pnpm live:posthog`: the step, the stale-write 409, the no-op write that keeps the version, the release, the rollback, and a whole rollout.
 
 ## What LaunchDarkly publishes, and what it doesn't
 

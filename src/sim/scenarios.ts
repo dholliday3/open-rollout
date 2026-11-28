@@ -35,7 +35,10 @@ const FLAG = "new-checkout",
   AN_HOUR_AND_A_HALF = 5_400_000,
   TWENTY_FIVE = 25,
   FLAKY = { failChance: 0.2, lostReplyChance: 0.15, staleReadChance: 0.5, staleReadMs: 45_000 },
-  ALL_FIVE: readonly Guardrail[] = [ERRORS, ERROR_RATIO, ERRORS_PER_UNIT, LATENCY, CONVERSION];
+  ALL_FIVE: readonly Guardrail[] = [ERRORS, ERROR_RATIO, ERRORS_PER_UNIT, LATENCY, CONVERSION],
+  /** Different people a day at 25 visits a minute at peak, over 24: what the flag's traffic reads as. */
+  QUIET_PEOPLE_AN_HOUR = 388,
+  THREE_DAYS = 259_200_000;
 
 function low(guardrails: readonly Guardrail[]): RolloutPlan {
   return standardPlan({ flagKey: FLAG, guardrails, risk: "low" });
@@ -152,6 +155,12 @@ const GOALS: readonly Scenario[] = [
   fix("healthy"),
   fix("fixed"),
   { ...fix("fixed", { peakPerMinute: QUIET_PEAK }), name: "goal: a fix that halves the error, a small product (25 visits a minute)" },
+  {
+    ...fix("fixed", { peakPerMinute: QUIET_PEAK }),
+    name: "goal: a fix that halves the error, a small product, steps sized to its traffic",
+    plan: standardPlan({ flagKey: FLAG, guardrails: [FIX_GOAL], risk: "medium", unitsPerHour: QUIET_PEOPLE_AN_HOUR }),
+    runtime: { horizonMs: THREE_DAYS },
+  },
   { ...fix("fixed", { baseErrorChance: RARE }), name: "goal: a fix that halves a rare error" },
 ];
 
