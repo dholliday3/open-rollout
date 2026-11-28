@@ -107,7 +107,7 @@ standard medium plan, in the same simulated production. "Released" means shown t
 | Fixes nothing | 300 | 0.7% (2) | 284 | 14 false regressions |
 | Halves the error | 100 | 100% | 0 | |
 | Halves the error, a small product (25 visits a minute) | 100 | 0% | 0 | 100 paused for too little data |
-| The same, steps sized to its traffic (`unitsPerHour: 388`) | 100 | 22% | 78 | |
+| The same, steps sized to its traffic (`unitsPerHour: 388`) | 400 | 27% | 292 | |
 | Halves an error one request in 10,000 has | 100 | 34% | 66 | |
 
 The budget for releasing a change that fixes nothing is `limits.goalAlpha` = 5%. A small product doesn't
@@ -123,9 +123,10 @@ watching longer costs false alarms on the guardrails. Healthy code, medium plan,
 | A last step watched at least two hours, no goal | 4.7% [2.8, 7.7] |
 | A goal | 4.7% [2.8, 7.7] |
 
-The small product with sized steps also showed the late-exposure gap in [limits.md](limits.md): 4 of 100
-rollouts moved on from a step with 49 truly new people on an arm against 50 asked. The same plan on the
-code before this work did the same on the same seeds.
+The small product with sized steps also showed the late-exposure gap in [limits.md](limits.md): 8 of 400
+rollouts moved on from a step with 49 truly new people on an arm against 50 asked, so `pnpm sim` fails on
+that scenario. The same plan on the code before this work did the same on the same seeds (4 of the first
+100).
 
 ## Against a real PostHog project
 
