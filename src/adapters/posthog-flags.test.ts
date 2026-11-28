@@ -138,4 +138,15 @@ describe("the PostHog flag adapter", () => {
     await flags.write("new-checkout", NOBODY);
     await expect(flags.read("new-checkout")).resolves.toMatchObject({ allocation: NOBODY });
   });
+
+  it("says at the start that a flag released before can't take a step until it is set up again", async () => {
+    expect.hasAssertions();
+    const ready = createPostHogFlags({ projectId: 1, transport: fakePostHog(flag()).transport }),
+      released = fakePostHog(flag({ rollouts: [TWENTY] })),
+      flags = createPostHogFlags({ projectId: 1, transport: released.transport });
+    await flags.write("new-checkout", EVERYBODY);
+    await flags.write("new-checkout", NOBODY);
+    await expect(ready.setupProblem?.("new-checkout")).resolves.toBeNull();
+    await expect(flags.setupProblem?.("new-checkout")).resolves.toMatch(/released to everybody before/u);
+  });
 });

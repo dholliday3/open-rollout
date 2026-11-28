@@ -37,6 +37,7 @@
     "check:package": "tsx scripts/check-package.ts",
     "quickstart": "tsx examples/quickstart.ts",
     "sim": "SIM_RUNS=400 SIM_CHAOS_RUNS=1000 vitest run src/sim",
+    "live:posthog": "OPEN_ROLLOUT_POSTHOG_LIVE=1 vitest run src/adapters/posthog.live.test.ts",
     "mutate": "stryker run"
   },
   "dependencies": {

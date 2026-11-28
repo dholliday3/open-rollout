@@ -1,6 +1,7 @@
 import { BASE_ERROR_RATE, FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, recordOf, runFor, startedWorld, treatmentShare } from "./__tests__/world.js";
 import { EVERYBODY, FULL_SHARE, NOBODY, measuredStep } from "./allocation.js";
 import { describe, expect, it, vi } from "vitest";
+import { createAutopilot } from "./controller.js";
 
 vi.setConfig({ testTimeout: 10_000 });
 
@@ -59,6 +60,22 @@ describe("a flag someone else changes", () => {
     const result = await world.autopilot.start({ id: ROLLOUT_ID, now: world.now, plan: world.plan });
     expect(result.status).toBe("refused");
     expect(treatmentShare(world)).toBe(FULL_SHARE);
+  });
+});
+
+describe("a flag that can't take a step", () => {
+  it("is refused at the start with what its provider says is wrong, and nothing is written", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      problem = "The flag has two release conditions.",
+      setupProblem = async (): Promise<string> => {
+        await Promise.resolve();
+        return problem;
+      },
+      autopilot = createAutopilot({ flags: { ...world.flags, setupProblem }, metrics: world.metrics, notifier: world.notifier, store: world.store }),
+      result = await autopilot.start({ id: ROLLOUT_ID, now: world.now, plan: world.plan });
+    expect(result).toStrictEqual({ problems: [problem], record: null, status: "refused" });
+    expect(world.flags.peek(FLAG_KEY).revision).toBe(0);
   });
 });
 

@@ -1,4 +1,4 @@
-import { EVERYBODY, FULL_SHARE, NOBODY, sameAllocation } from "../allocation.js";
+import { EVERYBODY, FULL_SHARE, NOBODY, measuredStep, sameAllocation } from "../allocation.js";
 import type { FlagControl, FlagReading } from "../ports.js";
 import type { PostHogCall, PostHogTransport } from "./posthog-transport.js";
 import type { Allocation } from "../allocation.js";
@@ -76,7 +76,8 @@ function stepProblem(flag: PostHogFlag, allocation: Allocation, variants = DEFAU
     return `The flag ${flag.key} is disabled in PostHog. Enable it before rolling out.`;
   }
   if (flag.filters.groups.length !== 1 || variantShare(flag, variants.control) !== EVEN_SPLIT || variantShare(flag, variants.treatment) !== EVEN_SPLIT) {
-    return `The flag ${flag.key} must have one release condition and a 50/50 split between ${variants.control} and ${variants.treatment}.`;
+    // A release to everybody adds a condition and rewrites the split to 0/100, so a released flag needs setting up again.
+    return `The flag ${flag.key} must have one release condition and a 50/50 split between ${variants.control} and ${variants.treatment}. A flag that was released to everybody before has neither until they are put back.`;
   }
   return null;
 }
@@ -141,6 +142,10 @@ function createPostHogFlags(options: PostHogFlagsOptions): FlagControl {
     },
     // Both calls the adapter makes carry the flag's version, and PostHog answers 409 to a stale one.
     refusesStaleWrites: true,
+    setupProblem: async (flagKey) => {
+      const flag = await fetchFlag(setup, flagKey);
+      return stepProblem(flag, measuredStep(1), options.variants);
+    },
     write: async (flagKey, allocation, expectedRevision) => {
       const flag = await fetchFlag(setup, flagKey),
         version = expectedRevision ?? flag.version ?? 0,

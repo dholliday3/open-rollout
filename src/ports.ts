@@ -30,6 +30,11 @@ interface FlagControl {
    * writes, and the next tick puts a late write right.
    */
   write: (flagKey: string, allocation: Allocation, expectedRevision?: number) => Promise<number>;
+  /**
+   * Why this flag can't take a rollout's steps as it is set up, or null when it can. Asked once, before a
+   * rollout starts, so a flag no step can be written to is refused at the start instead of failing every tick.
+   */
+  readonly setupProblem?: (flagKey: string) => Promise<string | null>;
 }
 
 interface MetricQuery {

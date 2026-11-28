@@ -146,7 +146,11 @@ async function startProblems(ports: Ports, plan: RolloutPlan): Promise<string[]>
   }
   try {
     const flag = await ports.flags.read(plan.flagKey);
-    return flag.allocation.treatment > 0 ? ["The flag already serves the new behaviour to some traffic. Turn it off, or finish its rollout, before starting one."] : [];
+    if (flag.allocation.treatment > 0) {
+      return ["The flag already serves the new behaviour to some traffic. Turn it off, or finish its rollout, before starting one."];
+    }
+    const setup = (await ports.flags.setupProblem?.(plan.flagKey)) ?? null;
+    return setup === null ? [] : [setup];
   } catch (error) {
     return [`The flag couldn't be read: ${messageOf(error)}`];
   }
