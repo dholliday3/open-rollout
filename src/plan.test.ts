@@ -75,6 +75,19 @@ describe("checking a plan", () => {
     expect(planProblems(testPlan({ limits: { ...DEFAULT_LIMITS, sampleRatioAlpha: 1 } }))).toHaveLength(1);
     expect(planProblems(testPlan({ limits: { ...DEFAULT_LIMITS, tuneAtUnits: 0 } }))).toHaveLength(1);
     expect(planProblems(testPlan({ limits: { ...DEFAULT_LIMITS, minUnitsToJudge: 1 } }))).toHaveLength(1);
+    expect(planProblems(testPlan({ limits: { ...DEFAULT_LIMITS, goalAlpha: 0.5 } }))).toHaveLength(1);
+  });
+
+});
+
+describe("checking a plan's goals", () => {
+  it("refuses a goal that must improve by a negative amount, and takes a plan from before goals with no goal budget", () => {
+    expect.hasAssertions();
+    const [guardrail] = ERRORS,
+      { goalAlpha, ...older } = DEFAULT_LIMITS;
+    expect(goalAlpha).toBe(DEFAULT_LIMITS.alpha);
+    expect(planProblems(testPlan({ guardrails: [{ ...guardrail, mustImproveBy: -1 }] }))).toStrictEqual(["How much a goal must improve by can't be negative or not a number."]);
+    expect(planProblems(testPlan({ guardrails: [{ ...guardrail, mustImproveBy: 0 }], limits: older }))).toStrictEqual([]);
   });
 });
 

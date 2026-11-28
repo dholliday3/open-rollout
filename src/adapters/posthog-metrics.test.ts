@@ -2,6 +2,7 @@ import { createPostHogMetrics, snapshotFrom, snapshotQuery } from "./posthog-met
 import { describe, expect, it, vi } from "vitest";
 import type { MetricQuery } from "../ports.js";
 import type { PostHogReply } from "./posthog-transport.js";
+import { z } from "zod";
 
 vi.setConfig({ testTimeout: 5000 });
 
@@ -118,5 +119,49 @@ describe("the PostHog metric source's refusals", () => {
   it("refuses a guardrail with no PostHog definition", () => {
     expect.hasAssertions();
     expect(() => snapshotQuery({ ingestionLagMs: LAG, metrics: {}, now: () => NOW, projectId: 1, transport: unused }, QUERY, NOW)).toThrow("no usable PostHog definition");
+  });
+});
+
+describe("the PostHog metric source's traffic", () => {
+  const values = z.record(z.string(), z.unknown()),
+    hogQuery = z.object({ query: z.string(), values }),
+    querySchema = z.object({ query: hogQuery }),
+    DAY = 86_400_000,
+    PEOPLE_A_DAY = 480,
+    PER_HOUR = 20;
+
+  it("counts every unit that evaluated the flag over the window, whatever it was served, as units an hour", async () => {
+    expect.hasAssertions();
+    const calls: { query: string; values: Record<string, unknown> }[] = [],
+      source = createPostHogMetrics({
+        ...OPTIONS,
+        transport: async (call) => {
+          await Promise.resolve();
+          calls.push(querySchema.parse(call.body).query);
+          return { body: { columns: ["units"], results: [[PEOPLE_A_DAY]] }, status: OK };
+        },
+      });
+    await expect(source.traffic?.({ flagKey: "new-checkout", windowMs: DAY })).resolves.toBe(PER_HOUR);
+    expect(calls[0].query).toContain("uniqExact(person_id)");
+    expect(calls[0].query).toContain("event = '$feature_flag_called'");
+    expect(calls[0].query).not.toContain("$feature_flag_response");
+    expect(calls[0].values).toStrictEqual({ flag: "new-checkout", since: (NOW - LAG - DAY) / MS_PER_SECOND, until: (NOW - LAG) / MS_PER_SECOND });
+  });
+
+  it("counts groups when the unit is a group, and refuses a window of no time", async () => {
+    expect.hasAssertions();
+    const asked: string[] = [],
+      source = createPostHogMetrics({
+        ...OPTIONS,
+        transport: async (call) => {
+          await Promise.resolve();
+          asked.push(JSON.stringify(call.body));
+          return { body: { columns: ["units"], results: [[0]] }, status: OK };
+        },
+        unit: { groupTypeIndex: 2 },
+      });
+    await expect(source.traffic?.({ flagKey: "new-checkout", windowMs: DAY })).resolves.toBe(0);
+    expect(asked[0]).toContain("uniqExact($group_2)");
+    await expect(source.traffic?.({ flagKey: "new-checkout", windowMs: 0 })).rejects.toThrow("over some time");
   });
 });

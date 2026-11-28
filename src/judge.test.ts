@@ -117,6 +117,47 @@ describe("judging at the edges", () => {
   });
 });
 
+describe("judging a goal", () => {
+  const GOAL: Guardrail = { ...ERRORS, mustImproveBy: 0 },
+    FAR_BETTER = 40,
+    /** Better by enough for one goal alone, not for one of two sharing the goals' error budget. */
+    JUST_BETTER = 64;
+
+  it("calls a goal improved only once the whole interval is on the better side, and lists it until then", () => {
+    expect.hasAssertions();
+    const plan = testPlan({ guardrails: [GOAL] }),
+      better = judge(plan, snapshot({ errors: [BASE, FAR_BETTER] })),
+      same = judge(plan, snapshot({ errors: [BASE, BASE] }));
+    expect(better).toMatchObject({ findings: [{ improved: true }], regressions: [], unproven: [] });
+    expect(same).toMatchObject({ findings: [{ improved: false }], unproven: [GOAL] });
+    expect(judge(plan, snapshot({})).unproven).toStrictEqual([GOAL]);
+  });
+
+  it("gives a guardrail that isn't a goal no improvement reading, and the plan no goals waiting", () => {
+    expect.hasAssertions();
+    const judgement = judge(testPlan(), snapshot({ errors: [BASE, FAR_BETTER] }));
+    expect(judgement.findings[0]).not.toHaveProperty("improved");
+    expect(judgement.unproven).toStrictEqual([]);
+  });
+
+  it("splits the goals' own error budget between them, so a second goal asks more of each", () => {
+    expect.hasAssertions();
+    const other = { ...GOAL, metric: "signups" },
+      guarded = testPlan({ guardrails: [GOAL, { ...ERRORS, metric: "signups" }] }),
+      counts = { errors: [BASE, JUST_BETTER] as [number, number], signups: [BASE, BASE] as [number, number] };
+    expect(judge(testPlan({ guardrails: [GOAL] }), snapshot(counts)).findings[0].improved).toBe(true);
+    expect(judge(testPlan({ guardrails: [GOAL, other] }), snapshot(counts)).findings[0].improved).toBe(false);
+    expect(judge(guarded, snapshot(counts)).findings[0].improved).toBe(true);
+  });
+
+  it("asks a goal that must improve by more for a better reading", () => {
+    expect.hasAssertions();
+    const counts = { errors: [BASE, JUST_BETTER] as [number, number] };
+    expect(judge(testPlan({ guardrails: [{ ...GOAL, mustImproveBy: 0.01 }] }), snapshot(counts)).findings[0].improved).toBe(false);
+    expect(judge(testPlan({ guardrails: [{ ...GOAL, direction: "higher_is_better" }] }), snapshot({ errors: [JUST_BETTER, BASE] })).findings[0].improved).toBe(true);
+  });
+});
+
 describe("a ratio the new arm has broken", () => {
   const ratio = testPlan({ guardrails: [{ ...ERRORS, kind: "ratio" }] }),
     under = { crossSum: BASE, sum: UNITS, sumSquares: UNITS },

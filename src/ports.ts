@@ -62,9 +62,20 @@ interface MetricSnapshot {
   readonly metrics: Readonly<Record<string, ArmPair<ArmSample>>>;
 }
 
+interface TrafficQuery {
+  readonly flagKey: string;
+  /** Count over this long, up to now. */
+  readonly windowMs: number;
+}
+
 /** Where exposures and metric events are counted. */
 interface MetricSource {
   snapshot: (query: MetricQuery) => Promise<MetricSnapshot>;
+  /**
+   * Units an hour, each counted once over the window, that evaluated the flag whatever it served them: how
+   * fast a rollout's steps can gather new units. Optional; without it a plan can't be sized to the traffic.
+   */
+  readonly traffic?: (query: TrafficQuery) => Promise<number>;
 }
 
 interface Stored {
@@ -98,4 +109,4 @@ interface Ports {
   readonly notifier: Notifier;
 }
 
-export type { ArmPair, FlagControl, FlagReading, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored };
+export type { ArmPair, FlagControl, FlagReading, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored, TrafficQuery };

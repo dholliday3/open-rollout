@@ -25,6 +25,7 @@ const { OPEN_ROLLOUT_POSTHOG_LIVE, POSTHOG_HOST, POSTHOG_PERSONAL_API_KEY, POSTH
   projectId = POSTHOG_PROJECT_ID ?? "",
   run = Date.now(),
   MINUTE = 60_000,
+  DAY = 86_400_000,
   CREATED = 201,
   EVEN = 50,
   ONE_PERCENT = 100,
@@ -144,5 +145,6 @@ describe.skipIf(!live)("the PostHog metric source on a real project", () => {
       snapshot = await source.snapshot({ flagKey: key, guardrails: [{ ...ERRORS, direction: "higher_is_better", metric: "pageviews" }], since: Date.now() - MINUTE });
     expect(snapshot.exposed).toStrictEqual({ control: 0, treatment: 0 });
     expect(snapshot.watermark).toBeLessThanOrEqual(snapshot.asOf);
+    await expect(source.traffic?.({ flagKey: key, windowMs: DAY })).resolves.toBe(0);
   });
 });

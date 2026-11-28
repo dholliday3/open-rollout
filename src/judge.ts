@@ -1,7 +1,8 @@
 import type { ArmPair, MetricSnapshot } from "./ports.js";
-import type { ArmSample, Interval } from "./stats.js";
+import type { ArmSample, Estimate, Interval } from "./stats.js";
 import type { Guardrail, RolloutPlan } from "./plan.js";
 import { differenceInterval, estimateArms, isSampleRatioMismatch, sampleProblem } from "./stats.js";
+import { goalAlphaOf, goalsOf } from "./plan.js";
 import type { Finding } from "./record.js";
 
 /** A guardrail that the new behaviour has made worse, with the reading that says so. */
@@ -21,6 +22,8 @@ interface Judgement {
   readonly broken: readonly Guardrail[];
   /** Every guardrail's reading, regressed or not, for people and agents to look at. */
   readonly findings: readonly Finding[];
+  /** Goals not yet shown better, a goal with no reading included. The release waits while any is here. */
+  readonly unproven: readonly Guardrail[];
 }
 
 function isWorse(guardrail: Guardrail, difference: Interval): boolean {
@@ -36,6 +39,16 @@ function isConclusive(guardrail: Guardrail, difference: Interval): boolean {
   return guardrail.direction === "lower_is_better" ? difference.upper < mustRuleOut : difference.lower > -mustRuleOut;
 }
 
+/**
+ * True when the whole interval is past `mustImproveBy` on the better side. The same confidence sequence that
+ * calls a regression, pointed the other way, on the goals' own error budget, each goal an equal part of it.
+ */
+function isImproved(guardrail: Guardrail & { mustImproveBy: number }, estimates: { control: Estimate; treatment: Estimate }, plan: RolloutPlan): boolean {
+  const alpha = goalAlphaOf(plan.limits) / goalsOf(plan).length,
+    difference = differenceInterval(estimates.control, estimates.treatment, { alpha, tuneAtUnits: plan.limits.tuneAtUnits });
+  return guardrail.direction === "lower_is_better" ? difference.upper < -guardrail.mustImproveBy : difference.lower > guardrail.mustImproveBy;
+}
+
 /** One guardrail's reading, or null while either arm has too little to say anything. */
 function read(guardrail: Guardrail, arms: ArmPair<ArmSample> | undefined, plan: RolloutPlan): Finding | null {
   const estimates = arms === undefined ? null : estimateArms(guardrail.kind, arms);
@@ -43,10 +56,12 @@ function read(guardrail: Guardrail, arms: ArmPair<ArmSample> | undefined, plan: 
     return null;
   }
   const { control, treatment } = estimates,
+    { mustImproveBy } = guardrail,
     // Each guardrail gets an equal part of the plan's error rate, so more guardrails don't mean more false alarms.
     alpha = plan.limits.alpha / plan.guardrails.length,
-    difference = differenceInterval(control, treatment, { alpha, tuneAtUnits: plan.limits.tuneAtUnits });
-  return { conclusive: isConclusive(guardrail, difference), control: control.value, difference, metric: guardrail.metric, treatment: treatment.value, units: { control: control.units, treatment: treatment.units } };
+    difference = differenceInterval(control, treatment, { alpha, tuneAtUnits: plan.limits.tuneAtUnits }),
+    finding: Finding = { conclusive: isConclusive(guardrail, difference), control: control.value, difference, metric: guardrail.metric, treatment: treatment.value, units: { control: control.units, treatment: treatment.units } };
+  return mustImproveBy === undefined ? finding : { ...finding, improved: isImproved({ ...guardrail, mustImproveBy }, estimates, plan) };
 }
 
 /**
@@ -110,8 +125,10 @@ function judge(plan: RolloutPlan, snapshot: MetricSnapshot): Judgement {
       }
     }
   }
-  const broken = plan.guardrails.filter((guardrail) => isBroken(guardrail, snapshot.metrics[guardrail.metric], plan));
-  return { broken, contaminated: isContaminated(snapshot, plan), findings, mismatched: isMismatched(snapshot, plan), regressions };
+  const broken = plan.guardrails.filter((guardrail) => isBroken(guardrail, snapshot.metrics[guardrail.metric], plan)),
+    improved = new Set(findings.filter((finding) => finding.improved === true).map((finding) => finding.metric)),
+    unproven = goalsOf(plan).filter((goal) => !improved.has(goal.metric));
+  return { broken, contaminated: isContaminated(snapshot, plan), findings, mismatched: isMismatched(snapshot, plan), regressions, unproven };
 }
 
 export type { Judgement, Regression };

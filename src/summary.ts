@@ -1,6 +1,7 @@
 import type { Finding, RolloutRecord } from "./record.js";
-import { gateName, percent } from "./transitions.js";
+import { gateName, nextGate, percent } from "./transitions.js";
 import type { Inspection } from "./controller.js";
+import type { Judgement } from "./judge.js";
 
 /** One guardrail as a person or an agent needs to read it. */
 interface GuardrailReading {
@@ -13,6 +14,8 @@ interface GuardrailReading {
   readonly worse: boolean;
   /** False while the reading is still too wide to pass a step: nothing was detected, and not enough was ruled out. */
   readonly conclusive: boolean;
+  /** On a goal only: true once the new behaviour is shown better by enough. The release waits for every goal. */
+  readonly improved?: boolean;
 }
 
 /** A rollout in plain words and numbers: what an agent reads to answer "how is the rollout going?". */
@@ -34,7 +37,7 @@ function stepOf(record: RolloutRecord): string {
   return record.stepIndex < 0 ? "not started" : `${record.stepIndex + 1} of ${record.plan.steps.length}`;
 }
 
-function headlineOf(record: RolloutRecord): string {
+function headlineOf(record: RolloutRecord, judgement: Judgement | null): string {
   if (record.outcome !== null) {
     return record.outcome.detail;
   }
@@ -44,7 +47,12 @@ function headlineOf(record: RolloutRecord): string {
   if (record.pendingGate !== null && record.phase === "awaiting_approval") {
     return `Waiting for approval of ${gateName(record, record.pendingGate)}.`;
   }
-  return record.confirmedAt === null ? "Applying the next step to the flag." : `Watching ${percent(record.desired.treatment)} of traffic on the new behaviour.`;
+  if (record.confirmedAt === null) {
+    return "Applying the next step to the flag.";
+  }
+  const watching = `Watching ${percent(record.desired.treatment)} of traffic on the new behaviour.`,
+    unproven = nextGate(record) === "release" ? (judgement?.unproven ?? []) : [];
+  return unproven.length === 0 ? watching : `${watching} The release waits until ${unproven.map((goal) => goal.metric).join(" and ")} is shown better.`;
 }
 
 function waitingOn(record: RolloutRecord): string | null {
@@ -55,7 +63,7 @@ function waitingOn(record: RolloutRecord): string | null {
 }
 
 function readingOf(finding: Finding, worse: boolean): GuardrailReading {
-  return {
+  const reading: GuardrailReading = {
     conclusive: finding.conclusive,
     gapBetween: [finding.difference.lower, finding.difference.upper],
     metric: finding.metric,
@@ -64,6 +72,7 @@ function readingOf(finding: Finding, worse: boolean): GuardrailReading {
     unitsPerArm: [finding.units.control, finding.units.treatment],
     worse,
   };
+  return finding.improved === undefined ? reading : { ...reading, improved: finding.improved };
 }
 
 /** A rollout as an agent should describe it. Pure: built from one inspection. */
@@ -73,7 +82,7 @@ function summarize(inspection: Inspection): RolloutSummary {
   return {
     flagKey: record.plan.flagKey,
     guardrails: (judgement?.findings ?? []).map((finding) => readingOf(finding, regressed.has(finding.metric))),
-    headline: headlineOf(record),
+    headline: headlineOf(record, judgement),
     id: record.id,
     onNewBehaviour: percent(record.desired.treatment),
     phase: record.phase,

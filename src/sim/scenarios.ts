@@ -136,4 +136,23 @@ const REGRESSIONS: readonly Scenario[] = [
   { ...regression("moderate"), name: "regression: moderate, a small product (25 visits a minute)", world: { effect: "moderate", peakPerMinute: QUIET_PEAK } },
 ];
 
-export { ALL_FIVE, FLAG, HEALTHY, REGRESSIONS, TROUBLED, low, medium, tinyFirstStep };
+/** The bug's own error as a goal: the release waits until the new behaviour is shown to have less of it. */
+const FIX_GOAL: Guardrail = { ...ERRORS, mustImproveBy: 0 };
+
+function fix(effect: EffectName, world: Scenario["world"] = {}): Scenario {
+  return { name: `goal: ${effect === "fixed" ? "a fix that halves the error" : "a change that fixes nothing"}`, plan: medium([FIX_GOAL]), runtime: {}, world: { effect, ...world } };
+}
+
+/**
+ * Rollouts of a bug fix with the bug's error as a goal. A fix that does nothing measures how often a change
+ * is released as a fix when it isn't one (at most `limits.goalAlpha`); a real fix measures how often, and
+ * how fast, one is shown to work.
+ */
+const GOALS: readonly Scenario[] = [
+  fix("healthy"),
+  fix("fixed"),
+  { ...fix("fixed", { peakPerMinute: QUIET_PEAK }), name: "goal: a fix that halves the error, a small product (25 visits a minute)" },
+  { ...fix("fixed", { baseErrorChance: RARE }), name: "goal: a fix that halves a rare error" },
+];
+
+export { ALL_FIVE, FLAG, GOALS, HEALTHY, REGRESSIONS, TROUBLED, low, medium, tinyFirstStep };

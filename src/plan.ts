@@ -1,5 +1,6 @@
 import { HALF_SHARE } from "./allocation.js";
 import type { MetricKind } from "./stats.js";
+import { duration } from "./traffic.js";
 
 /** Which way a metric gets worse. */
 type Direction = "lower_is_better" | "higher_is_better";
@@ -19,6 +20,13 @@ interface Guardrail {
    * a step passes when nothing was detected, which on thin traffic is not the same as nothing being wrong.
    */
   readonly mustRuleOut?: number;
+  /**
+   * Makes this guardrail a goal as well: before the release, the new behaviour must be shown better than the
+   * old by more than this, in the metric's own units, with the whole interval past it on the better side.
+   * For a bug fix, the bug's own error, so a fix that changed nothing is not released as one that worked. 0
+   * asks only that it is better. The call has its own error budget, `limits.goalAlpha`.
+   */
+  readonly mustImproveBy?: number;
 }
 
 /** One stage of exposure, watched before the next. */
@@ -38,6 +46,11 @@ interface Step {
 interface Limits {
   /** Chance, over a whole rollout, that healthy code is called worse on any guardrail. */
   readonly alpha: number;
+  /**
+   * Chance, over a whole rollout, that a change which does nothing is called better on any goal (a guardrail
+   * with `mustImproveBy`). Left out, 0.05.
+   */
+  readonly goalAlpha?: number;
   /** Units per arm at which the guardrails should be sharpest. */
   readonly tuneAtUnits: number;
   /** Chance, over a whole rollout, that an even split is called uneven. */
@@ -83,11 +96,13 @@ const MS_PER_MINUTE = 60_000,
   MAX_ERROR_RATE = 0.5,
   /** LaunchDarkly's release expiry. */
   EXPIRY_MS = 1_814_400_000,
+  DEFAULT_GOAL_ALPHA = 0.05,
   BLIND_MS = 900_000,
   STALE_MS = 300_000,
   SETTLE_MS = 600_000,
   DEFAULT_LIMITS: Limits = {
     alpha: 0.05,
+    goalAlpha: DEFAULT_GOAL_ALPHA,
     expireAfterIdleMs: EXPIRY_MS,
     maxBlindMs: BLIND_MS,
     maxContaminatedShare: 0.01,
@@ -140,6 +155,9 @@ function guardrailProblems(guardrails: readonly Guardrail[]): string[] {
   if (guardrails.some((guardrail) => guardrail.mustRuleOut !== undefined && !(guardrail.mustRuleOut > guardrail.tolerance))) {
     problems.push("What a guardrail must rule out has to be more than what it tolerates.");
   }
+  if (guardrails.some((guardrail) => guardrail.mustImproveBy !== undefined && !isAmount(guardrail.mustImproveBy))) {
+    problems.push("How much a goal must improve by can't be negative or not a number.");
+  }
   if (names.includes("")) {
     problems.push("A guardrail names its metric.");
   }
@@ -172,6 +190,16 @@ function lagProblems(plan: RolloutPlan): string[] {
   ];
 }
 
+/** The goals' error budget; a plan made before goals existed has none written down. */
+function goalAlphaOf(limits: Limits): number {
+  return limits.goalAlpha ?? DEFAULT_GOAL_ALPHA;
+}
+
+/** The guardrails that are also goals: the new behaviour must be shown better on them before the release. */
+function goalsOf(plan: RolloutPlan): Guardrail[] {
+  return plan.guardrails.filter((guardrail) => guardrail.mustImproveBy !== undefined);
+}
+
 function isErrorRate(value: number): boolean {
   return value > 0 && value < MAX_ERROR_RATE;
 }
@@ -179,7 +207,7 @@ function isErrorRate(value: number): boolean {
 function limitProblems(limits: Limits): string[] {
   const problems: string[] = [],
     times = [limits.maxStalenessMs, limits.maxBlindMs, limits.propagationMs, limits.expireAfterIdleMs, limits.settleMs, limits.sourceLagMs ?? 0];
-  if (!isErrorRate(limits.alpha) || !isErrorRate(limits.sampleRatioAlpha)) {
+  if (!isErrorRate(limits.alpha) || !isErrorRate(limits.sampleRatioAlpha) || !isErrorRate(goalAlphaOf(limits))) {
     problems.push("An error rate must be above 0 and below 0.5.");
   }
   if (!isAmount(limits.tuneAtUnits, 1) || !isAmount(limits.minUnitsToJudge, 2)) {
@@ -192,6 +220,18 @@ function limitProblems(limits: Limits): string[] {
     problems.push("A rollout needs some time before it expires, and metrics some time before they are stale.");
   }
   return problems;
+}
+
+/** A rollout that makes no progress for `expireAfterIdleMs` is undone, so a step that may wait longer than that for its units would be undone before it could give up. */
+function expiryProblems(plan: RolloutPlan): string[] {
+  const { expireAfterIdleMs, propagationMs } = plan.limits;
+  // A limit or a deadline that isn't a time is already reported as one.
+  if (!isAmount(expireAfterIdleMs, 1) || !isAmount(propagationMs)) {
+    return [];
+  }
+  return plan.steps.flatMap((step, index) =>
+    !isAmount(step.maxDurationMs) || step.maxDurationMs + propagationMs < expireAfterIdleMs ? [] : [`Step ${index + 1} may wait ${duration(step.maxDurationMs)} for its units, longer than a rollout may go without progress (expireAfterIdleMs, ${duration(expireAfterIdleMs)}). The path is too quiet for this plan: give the step fewer minFreshUnits, or ship the change without a flag.`],
+  );
 }
 
 function policyProblems(plan: RolloutPlan): string[] {
@@ -234,8 +274,8 @@ function samePlan(left: RolloutPlan, right: RolloutPlan): boolean {
 /** Everything wrong with a plan, in words a person can fix; empty when it can run. */
 function planProblems(plan: RolloutPlan): string[] {
   const named = plan.flagKey === "" ? ["A plan names its flag."] : [];
-  return [...named, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...lagProblems(plan), ...policyProblems(plan)];
+  return [...named, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...lagProblems(plan), ...expiryProblems(plan), ...policyProblems(plan)];
 }
 
 export type { Direction, Guardrail, Limits, RolloutPlan, Step };
-export { DEFAULT_LIMITS, isStepOf, planProblems, samePlan, stepAt };
+export { DEFAULT_LIMITS, goalAlphaOf, goalsOf, isStepOf, planProblems, samePlan, stepAt };

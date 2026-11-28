@@ -1,6 +1,7 @@
 import type { Guardrail, Limits, RolloutPlan, Step } from "./plan.js";
 import { DEFAULT_LIMITS } from "./plan.js";
 import { HALF_SHARE } from "./allocation.js";
+import { timeForUnits } from "./traffic.js";
 
 /** How much could go wrong; a riskier change gets smaller first steps, longer watches and a person at the end. */
 type Risk = "low" | "medium" | "high";
@@ -29,6 +30,13 @@ interface PlanRequest {
    * for a source that is a few minutes behind at most.
    */
   readonly sourceLagMs?: number | undefined;
+  /**
+   * New units an hour, across the whole product, that evaluate the flag. Each step then lasts at least as
+   * long as its units take to arrive on average, so a fix on a quiet path gets steps of hours or days
+   * instead of minutes that pause for too little data. `forecast` says how long that comes to, and
+   * `planProblems` refuses a step longer than the rollout may sit without progress.
+   */
+  readonly unitsPerHour?: number | undefined;
   readonly overrides?: PlanOverrides | undefined;
 }
 
@@ -63,12 +71,22 @@ function overridden<Shape extends object>(base: Shape, changes: Overrides<Shape>
   return { ...base, ...Object.fromEntries(set) };
 }
 
-function ladderStep(rung: { share: number; minutes: number }, lag: number, every: Overrides<Omit<Step, "treatmentShare">> | undefined): Step {
-  const minDurationMs = every?.minDurationMs ?? rung.minutes * MS_PER_MINUTE;
+/** The rung's own watch, or longer when the traffic takes longer than that to bring the step its units. */
+function watchFor(rung: { share: number; minutes: number }, units: number, unitsPerHour: number | undefined): number {
+  const ladder = rung.minutes * MS_PER_MINUTE;
+  if (unitsPerHour === undefined || !(unitsPerHour > 0) || !Number.isFinite(unitsPerHour)) {
+    return ladder;
+  }
+  return Math.max(ladder, Math.ceil(timeForUnits(units, rung.share, unitsPerHour) / MS_PER_MINUTE) * MS_PER_MINUTE);
+}
+
+function ladderStep(rung: { share: number; minutes: number }, sizing: { lag: number; unitsPerHour: number | undefined }, every: Overrides<Omit<Step, "treatmentShare">> | undefined): Step {
+  const minFreshUnits = every?.minFreshUnits ?? DEFAULT_FRESH_UNITS,
+    minDurationMs = every?.minDurationMs ?? watchFor(rung, minFreshUnits, sizing.unitsPerHour);
   return {
-    maxDurationMs: every?.maxDurationMs ?? minDurationMs * PATIENCE + lag,
+    maxDurationMs: every?.maxDurationMs ?? minDurationMs * PATIENCE + sizing.lag,
     minDurationMs,
-    minFreshUnits: every?.minFreshUnits ?? DEFAULT_FRESH_UNITS,
+    minFreshUnits,
     requiresApproval: every?.requiresApproval ?? false,
     treatmentShare: rung.share,
   };
@@ -76,7 +94,8 @@ function ladderStep(rung: { share: number; minutes: number }, lag: number, every
 
 /**
  * A plan with the usual ladder for a change of this risk. A source that runs `sourceLagMs` behind gets that
- * much more time before its metrics are stale and before each step gives up; `overrides` change the rest.
+ * much more time before its metrics are stale and before each step gives up; traffic of `unitsPerHour`
+ * stretches each step to the time its units take to arrive; `overrides` change the rest.
  */
 function standardPlan(request: PlanRequest): RolloutPlan {
   const lag = request.sourceLagMs ?? 0,
@@ -90,7 +109,7 @@ function standardPlan(request: PlanRequest): RolloutPlan {
       onMetricsOutage: "hold",
       onSampleRatioMismatch: "rollback",
       requiresApprovalToRelease: request.risk === "high",
-      steps: LADDERS[request.risk].map((rung) => ladderStep(rung, lag, everyStep)),
+      steps: LADDERS[request.risk].map((rung) => ladderStep(rung, { lag, unitsPerHour: request.unitsPerHour }, everyStep)),
     };
   return overridden(standard, policies);
 }

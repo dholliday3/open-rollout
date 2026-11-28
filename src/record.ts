@@ -16,9 +16,10 @@ type Phase = "awaiting_approval" | "ramping" | "paused" | "rolling_back" | "roll
 /** What a person approves: moving to a step, or the release to everybody. */
 type Gate = number | "release";
 
-type PauseReason = "manual" | "regression" | "sample_ratio_mismatch" | "contaminated" | "insufficient_data" | "external_change";
+/** `unproven`: the last step ran out of time before every goal was shown better. */
+type PauseReason = "manual" | "regression" | "sample_ratio_mismatch" | "contaminated" | "insufficient_data" | "unproven" | "external_change";
 
-type RollbackReason = "manual" | "regression" | "sample_ratio_mismatch" | "insufficient_data" | "metrics_outage" | "expired";
+type RollbackReason = "manual" | "regression" | "sample_ratio_mismatch" | "insufficient_data" | "unproven" | "metrics_outage" | "expired";
 
 type EventType =
   | "started"
@@ -45,6 +46,8 @@ interface Finding {
   readonly units: { readonly control: number; readonly treatment: number };
   /** False while the reading is too wide to rule out what its guardrail must rule out; such a reading can't pass a step. */
   readonly conclusive: boolean;
+  /** On a goal only: true once the new behaviour is shown better by more than `mustImproveBy`. The release waits for it. */
+  readonly improved?: boolean;
 }
 
 /** Something a person should hear about. `key` is the same however often it is sent. */

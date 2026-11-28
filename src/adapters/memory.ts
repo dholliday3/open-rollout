@@ -19,6 +19,9 @@ interface MemoryNotifier extends Notifier {
 interface MemoryMetrics extends MetricSource {
   /** The next snapshots are this one; null makes the source fail. */
   set: (snapshot: MetricSnapshot | null) => void;
+  /** Units an hour that `traffic` answers; until it is set, or after null, `traffic` fails. */
+  setTraffic: (unitsPerHour: number | null) => void;
+  readonly traffic: NonNullable<MetricSource["traffic"]>;
 }
 
 function createMemoryStore(): RolloutStore {
@@ -94,10 +97,14 @@ function createMemoryNotifier(): MemoryNotifier {
 }
 
 function createMemoryMetrics(): MemoryMetrics {
-  let current: MetricSnapshot | null = null;
+  let current: MetricSnapshot | null = null,
+    perHour: number | null = null;
   return {
     set: (snapshot) => {
       current = snapshot;
+    },
+    setTraffic: (unitsPerHour) => {
+      perHour = unitsPerHour;
     },
     snapshot: async () => {
       await Promise.resolve();
@@ -105,6 +112,13 @@ function createMemoryMetrics(): MemoryMetrics {
         throw new Error("The metric source is down.");
       }
       return current;
+    },
+    traffic: async () => {
+      await Promise.resolve();
+      if (perHour === null) {
+        throw new Error("The metric source can't say how much traffic the flag gets.");
+      }
+      return perHour;
     },
   };
 }

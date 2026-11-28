@@ -30,10 +30,12 @@ interface Effect {
   readonly commonMode: (sinceStartMs: number) => number;
 }
 
-type EffectName = "healthy" | "outage" | "moderate" | "subtle" | "leak" | "segment" | "heavy_users" | "load" | "novelty" | "latency" | "conversion" | "common_mode" | "exposure_loss";
+type EffectName = "healthy" | "fixed" | "outage" | "moderate" | "subtle" | "leak" | "segment" | "heavy_users" | "load" | "novelty" | "latency" | "conversion" | "common_mode" | "exposure_loss";
 
 const MINUTE = 60_000,
   DOUBLE = 2,
+  /** A fix that takes away half of what fails. */
+  HALVED = 0.5,
   SUBTLE = 1.25,
   LEAK_AFTER_MS = 1_200_000,
   LEAK_FACTOR = 5,
@@ -63,6 +65,7 @@ const EFFECTS: Record<EffectName, Effect> = {
   common_mode: { ...HEALTHY, commonMode: incident },
   conversion: { ...HEALTHY, conversionFactor: FEWER },
   exposure_loss: { ...HEALTHY, exposureLoss: LOST },
+  fixed: { ...HEALTHY, errorChance: times(HALVED) },
   healthy: HEALTHY,
   heavy_users: { ...HEALTHY, errorChance: (base, served) => Math.min(1, base * (served.person.activity >= HEAVY_FROM ? HEAVY_FACTOR : 1)) },
   latency: { ...HEALTHY, latencyFactor: SLOWER },

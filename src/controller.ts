@@ -62,10 +62,17 @@ interface Autopilot {
   tickAll: (now: number) => Promise<TickResult[]>;
   command: (id: string, command: Command, now: number) => Promise<CommandOutcome>;
   inspect: (id: string) => Promise<Inspection | null>;
+  /**
+   * Units an hour that evaluated the flag over the last day, whatever it served them, for `forecast` and
+   * `standardPlan({ unitsPerHour })`. Null when the metric source can't measure it, or the measure failed.
+   */
+  traffic: (flagKey: string) => Promise<number | null>;
 }
 
 /** A command is tried again when another worker saved first. A rollback must not give up after a few lost races. */
-const COMMAND_ATTEMPTS = 20;
+const COMMAND_ATTEMPTS = 20,
+  /** A whole day, so a quiet night and a busy afternoon both count. */
+  TRAFFIC_WINDOW_MS = 86_400_000;
 
 async function notifyOne(ports: Ports, event: RolloutRecord["outbox"][number], problems: string[]): Promise<boolean> {
   try {
@@ -218,6 +225,15 @@ async function inspect(ports: Ports, id: string): Promise<Inspection | null> {
   return { judgement: readable ? judge(stored.record.plan, snapshot) : null, record: stored.record };
 }
 
+async function traffic(ports: Ports, flagKey: string): Promise<number | null> {
+  try {
+    const perHour = await ports.metrics.traffic?.({ flagKey, windowMs: TRAFFIC_WINDOW_MS });
+    return perHour !== undefined && Number.isFinite(perHour) && perHour >= 0 ? perHour : null;
+  } catch {
+    return null;
+  }
+}
+
 /** An autopilot over these ports. It holds no state of its own: every call starts from the store. */
 function createAutopilot(ports: Ports): Autopilot {
   return {
@@ -240,6 +256,10 @@ function createAutopilot(ports: Ports): Autopilot {
     tickAll: async (now) => {
       const results = await tickAll(ports, now);
       return results;
+    },
+    traffic: async (flagKey) => {
+      const perHour = await traffic(ports, flagKey);
+      return perHour;
     },
   };
 }

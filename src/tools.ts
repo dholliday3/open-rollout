@@ -1,10 +1,15 @@
 import type { Autopilot, CommandOutcome } from "./controller.js";
-import type { Guardrail, Limits } from "./plan.js";
+import type { Guardrail, RolloutPlan } from "./plan.js";
+import { approveShape, forecastShape, notedShape, startShape, targetShape } from "./tool-shapes.js";
+import { duration, forecast } from "./traffic.js";
 import type { Command } from "./commands.js";
+import type { Forecast } from "./traffic.js";
 import type { RolloutSummary } from "./summary.js";
+import type { guardrailShape } from "./tool-shapes.js";
+import { planProblems } from "./plan.js";
 import { standardPlan } from "./standard-plan.js";
 import { summarize } from "./summary.js";
-import { z } from "zod";
+import type { z } from "zod";
 
 /**
  * The rollout tools an agent gets, with no runtime in them. Each is a description, a zod input schema and
@@ -27,6 +32,8 @@ interface ToolAnswer {
   /** One sentence for the agent to pass on. */
   readonly message: string;
   readonly rollout: RolloutSummary | null;
+  /** How long the plan takes on the flag's traffic, when that is known. */
+  readonly forecast?: Forecast;
 }
 
 /** A tool's zod 4 input schema, named here so code that infers one needn't reach zod through this package. */
@@ -39,56 +46,7 @@ interface RolloutTool<Input> {
   readonly run: (input: Input, call: ToolCall) => Promise<ToolAnswer>;
 }
 
-const idShape = z.string().min(1).describe("The rollout's id."),
-  noteShape = z.string().optional().describe("Why, in a sentence. It goes on the record."),
-  guardrailShape = z.object({
-    metric: z.string().min(1).describe("The metric's name, as the metric source knows it."),
-    kind: z.enum(["rate", "mean", "ratio"]).describe("rate: share of people with the event. mean: average per person. ratio: one total over another, such as errors per request."),
-    direction: z.enum(["lower_is_better", "higher_is_better"]),
-    tolerance: z.number().min(0).default(0).describe("How much worse is still fine, in the metric's own units."),
-    onRegression: z.enum(["rollback", "pause"]).default("rollback"),
-    mustRuleOut: z.number().positive().optional().describe("How large a regression must be ruled out before a step may pass, in the metric's own units. Leave out to pass a step when nothing was detected."),
-  }),
-  durationShape = z.number().int().positive(),
-  everyStepShape = z.object({
-    minDurationMs: durationShape.optional().describe("The least time each step is watched."),
-    maxDurationMs: durationShape.optional().describe("When a step still short of traffic gives up. Left out, six times its watch plus the source's lag."),
-    minFreshUnits: z.number().int().min(0).optional().describe("New units each arm must gain during a step. Lower it for a product with few people or accounts."),
-    requiresApproval: z.boolean().optional().describe("Ask a person before every step."),
-  }),
-  // Every limit but the lag, which is its own input so the deadlines move with it; `satisfies` fails when Limits changes.
-  limitsShape = z.object({
-    alpha: z.number().optional(),
-    tuneAtUnits: z.number().optional(),
-    sampleRatioAlpha: z.number().optional(),
-    minUnitsToJudge: z.number().optional(),
-    maxStalenessMs: z.number().optional(),
-    maxBlindMs: z.number().optional(),
-    propagationMs: z.number().optional(),
-    expireAfterIdleMs: z.number().optional(),
-    settleMs: z.number().optional(),
-    maxContaminatedShare: z.number().optional(),
-  } satisfies Record<keyof Omit<Limits, "sourceLagMs">, z.ZodOptional<z.ZodNumber>>),
-  overridesShape = z.object({
-    everyStep: everyStepShape.optional().describe("Set on every step of the standard ladder."),
-    limits: limitsShape.optional().describe("The plan's limits by name, each replacing the standard value. Rarely needed."),
-    onInsufficientData: z.enum(["rollback", "pause"]).optional().describe("What a step that never gets enough traffic does. Standard: pause."),
-    onMetricsOutage: z.enum(["hold", "rollback"]).optional().describe("What the rollout does when the metrics are down for too long. Standard: hold."),
-    onSampleRatioMismatch: z.enum(["rollback", "pause"]).optional().describe("What uneven arms do. Standard: rollback."),
-    requiresApprovalToRelease: z.boolean().optional().describe("Ask a person before the release to everybody. Standard: only for high risk."),
-  }),
-  startShape = z.object({
-    id: idShape,
-    flagKey: z.string().min(1).describe("The feature flag to roll out."),
-    risk: z.enum(["low", "medium", "high"]).describe("How much could go wrong. Higher risk means smaller first steps, longer watches, and approval before the release."),
-    guardrails: z.array(guardrailShape).describe("The metrics the rollout must not make worse. With none, it is a timed ramp with no automatic rollback."),
-    sourceLagMs: z.number().int().min(0).optional().describe("How far behind the clock the metrics run, in milliseconds, such as 3600000 for a warehouse loaded hourly. Every step gets that much longer before it gives up. Leave out when the metrics are minutes behind at most."),
-    overrides: overridesShape.optional().describe("Changes to the standard plan, for a product with little traffic or a team with its own rules."),
-  }),
-  targetShape = z.object({ id: idShape }),
-  notedShape = z.object({ id: idShape, note: noteShape }),
-  approveShape = z.object({ id: idShape, gate: z.union([z.literal("release"), z.number().int().min(0)]).describe("What to approve: a step's index, counting from 0, or \"release\" for the release to everybody.") }),
-  REFUSALS: Record<CommandOutcome["status"], string> = {
+const REFUSALS: Record<CommandOutcome["status"], string> = {
     applied: "Done.",
     busy: "The rollout was busy. Try again.",
     duplicate: "That was already done.",
@@ -108,25 +66,53 @@ async function tell(autopilot: Autopilot, id: string, issued: { command: Command
   return said;
 }
 
-/** A guardrail as the plan holds it: a `mustRuleOut` the agent left out is not there at all, so the plan compares equal after a trip through JSON. */
-function guardrailOf({ mustRuleOut, ...guardrail }: z.infer<typeof guardrailShape>): Guardrail {
-  return mustRuleOut === undefined ? guardrail : { ...guardrail, mustRuleOut };
+/** A guardrail as the plan holds it: an option the agent left out is not there at all, so the plan compares equal after a trip through JSON. */
+function guardrailOf({ mustImproveBy, mustRuleOut, ...guardrail }: z.infer<typeof guardrailShape>): Guardrail {
+  return { ...guardrail, ...(mustRuleOut === undefined ? {} : { mustRuleOut }), ...(mustImproveBy === undefined ? {} : { mustImproveBy }) };
+}
+
+/** The standard plan the input asks for, sized to the traffic the agent gave or the source measured, and how long it takes on it. */
+async function planned(autopilot: Autopilot, input: z.infer<typeof forecastShape>): Promise<{ plan: RolloutPlan; outlook: Forecast | null }> {
+  const guardrails = input.guardrails.map((guardrail) => guardrailOf(guardrail)),
+    unitsPerHour = input.unitsPerHour ?? (guardrails.length === 0 ? null : await autopilot.traffic(input.flagKey)),
+    plan = standardPlan({ flagKey: input.flagKey, guardrails, overrides: input.overrides, risk: input.risk, sourceLagMs: input.sourceLagMs, unitsPerHour: unitsPerHour ?? undefined });
+  return { outlook: unitsPerHour === null ? null : forecast(plan, unitsPerHour), plan };
+}
+
+function outlookOf(outlook: Forecast): string {
+  return `At about ${Math.round(outlook.unitsPerHour)} new units an hour, it should take about ${duration(outlook.expectedMs)}.`;
 }
 
 async function begin(autopilot: Autopilot, input: z.infer<typeof startShape>, call: ToolCall): Promise<ToolAnswer> {
-  const plan = standardPlan({ flagKey: input.flagKey, guardrails: input.guardrails.map((guardrail) => guardrailOf(guardrail)), overrides: input.overrides, risk: input.risk, sourceLagMs: input.sourceLagMs }),
-    result = await autopilot.start({ id: input.id, now: call.now, plan }),
-    said = await answer(autopilot, input.id, { message: result.status === "started" ? "The rollout has started." : result.problems.join(" "), ok: result.status === "started" });
-  return said;
+  const { outlook, plan } = await planned(autopilot, input);
+  if (outlook !== null && outlook.problems.length > 0) {
+    return { forecast: outlook, message: outlook.problems.join(" "), ok: false, rollout: null };
+  }
+  const result = await autopilot.start({ id: input.id, now: call.now, plan }),
+    started = result.status === "started",
+    message = started ? ["The rollout has started.", ...(outlook === null ? [] : [outlookOf(outlook)])].join(" ") : result.problems.join(" "),
+    said = await answer(autopilot, input.id, { message, ok: started });
+  return outlook === null ? said : { ...said, forecast: outlook };
+}
+
+async function foresee(autopilot: Autopilot, input: z.infer<typeof forecastShape>): Promise<ToolAnswer> {
+  const { outlook, plan } = await planned(autopilot, input),
+    problems = [...planProblems(plan), ...(outlook?.problems ?? [])];
+  if (outlook === null) {
+    return { message: "The metric source can't say how much traffic this flag gets. Give unitsPerHour.", ok: false, rollout: null };
+  }
+  return { forecast: outlook, message: problems.length === 0 ? outlookOf(outlook) : problems.join(" "), ok: problems.length === 0, rollout: null };
 }
 
 type StartInput = z.infer<typeof startShape>;
+type ForecastInput = z.infer<typeof forecastShape>;
 type TargetInput = z.infer<typeof targetShape>;
 type NotedInput = z.infer<typeof notedShape>;
 type ApproveInput = z.infer<typeof approveShape>;
 
 interface RolloutTools {
   readonly rollout_approve: RolloutTool<ApproveInput>;
+  readonly rollout_forecast: RolloutTool<ForecastInput>;
   readonly rollout_pause: RolloutTool<NotedInput>;
   readonly rollout_release: RolloutTool<TargetInput>;
   readonly rollout_resume: RolloutTool<TargetInput>;
@@ -215,6 +201,14 @@ function everyTool(autopilot: Autopilot): RolloutTools {
         return said;
       },
     },
+    rollout_forecast: {
+      description: "How long a rollout would take on the traffic the flag gets, step by step, without starting it. A fix on a path few people reach can take days; when a plan can't get through on its traffic, ship the change without a flag instead.",
+      inputSchema: forecastShape,
+      run: async (input) => {
+        const said = await foresee(autopilot, input);
+        return said;
+      },
+    },
     rollout_status: {
       description: "Where a rollout is, what its guardrails read, and what it is waiting on.",
       inputSchema: targetShape,
@@ -250,6 +244,7 @@ function rolloutTools(autopilot: Autopilot, options: RolloutToolsOptions = {}): 
   }
   return {
     rollout_approve: asking(tools.rollout_approve, authorize, (input, call) => ({ ...call, input, tool: "rollout_approve" })),
+    rollout_forecast: asking(tools.rollout_forecast, authorize, (input, call) => ({ ...call, input, tool: "rollout_forecast" })),
     rollout_pause: asking(tools.rollout_pause, authorize, (input, call) => ({ ...call, input, tool: "rollout_pause" })),
     rollout_release: asking(tools.rollout_release, authorize, (input, call) => ({ ...call, input, tool: "rollout_release" })),
     rollout_resume: asking(tools.rollout_resume, authorize, (input, call) => ({ ...call, input, tool: "rollout_resume" })),

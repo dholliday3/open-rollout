@@ -89,6 +89,62 @@ describe("the agent's rollout tools, planning for metrics that are slow or thin"
   });
 });
 
+describe("the agent's rollout tools, on the flag's own traffic", () => {
+  const QUIET = 600,
+    BUSY = 30_000,
+    QUIET_FIRST_STEP_MS = 3_000_000;
+
+  it("sizes the steps to the traffic the source measured, and says how long the rollout should take", async () => {
+    expect.hasAssertions();
+    const world = createWorld();
+    world.metrics.setTraffic(QUIET);
+    const answer = await rolloutTools(world.autopilot).rollout_start.run(START_INPUT, call(world, "call-1"));
+    expect(answer).toMatchObject({ forecast: { problems: [], unitsPerHour: QUIET }, message: "The rollout has started. At about 600 new units an hour, it should take about 62 minutes.", ok: true });
+    await expect(recordOf(world)).resolves.toMatchObject({ plan: { steps: [{ minDurationMs: QUIET_FIRST_STEP_MS }, {}] } });
+  });
+
+  it("refuses to start on a flag nobody evaluates, and writes nothing", async () => {
+    expect.hasAssertions();
+    const world = createWorld();
+    world.metrics.setTraffic(0);
+    await expect(rolloutTools(world.autopilot).rollout_start.run(START_INPUT, call(world, "call-1"))).resolves.toMatchObject({ message: /^Nobody evaluates new-checkout/u, ok: false, rollout: null });
+    expect(world.flags.peek(FLAG_KEY).revision).toBe(0);
+  });
+
+  it("takes the traffic the agent gives over the source's, and forecasts without starting anything", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      tools = rolloutTools(world.autopilot);
+    world.metrics.setTraffic(0);
+    const { id: _id, ...plan } = START_INPUT;
+    await expect(tools.rollout_forecast.run({ ...plan, unitsPerHour: BUSY }, call(world, "call-1"))).resolves.toMatchObject({ message: "At about 30000 new units an hour, it should take about 22 minutes.", ok: true, rollout: null });
+    await expect(tools.rollout_forecast.run(plan, call(world, "call-2"))).resolves.toMatchObject({ forecast: { unitsPerHour: 0 }, ok: false });
+    expect(world.flags.peek(FLAG_KEY).revision).toBe(0);
+  });
+
+  it("asks for the traffic when the source can't measure it", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      { id: _id, ...plan } = START_INPUT;
+    await expect(rolloutTools(world.autopilot).rollout_forecast.run(plan, call(world, "call-1"))).resolves.toStrictEqual({ message: "The metric source can't say how much traffic this flag gets. Give unitsPerHour.", ok: false, rollout: null });
+    await expect(world.autopilot.traffic(FLAG_KEY)).resolves.toBeNull();
+  });
+});
+
+describe("the agent's rollout tools, for a fix", () => {
+  it("makes the bug's own error a goal the release waits on, and leaves other guardrails as they were", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      [errors] = START_INPUT.guardrails,
+      input = { ...START_INPUT, guardrails: [{ ...errors, mustImproveBy: 0 }, { ...errors, metric: "latency" }] };
+    await expect(rolloutTools(world.autopilot).rollout_start.run(input, call(world, "call-1"))).resolves.toMatchObject({ ok: true });
+    const { plan } = await recordOf(world);
+    expect(plan.guardrails[0].mustImproveBy).toBe(0);
+    expect(plan.guardrails[1]).not.toHaveProperty("mustImproveBy");
+    expect(rolloutTools(world.autopilot).rollout_start.inputSchema.safeParse({ ...input, guardrails: [{ ...errors, mustImproveBy: -1 }] }).success).toBe(false);
+  });
+});
+
 describe("the agent's rollout tools, behind an authorize hook", () => {
   it("refuses a release the hook refuses, with its reason, and leaves the record and the flag as they were", async () => {
     expect.hasAssertions();

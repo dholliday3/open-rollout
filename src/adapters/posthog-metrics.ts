@@ -1,4 +1,4 @@
-import type { ArmPair, MetricQuery, MetricSnapshot, MetricSource } from "../ports.js";
+import type { ArmPair, MetricQuery, MetricSnapshot, MetricSource, TrafficQuery } from "../ports.js";
 import type { ArmSample } from "../stats.js";
 import type { Guardrail } from "../plan.js";
 import type { PostHogTransport } from "./posthog-transport.js";
@@ -55,6 +55,7 @@ const cell = z.unknown(),
   /** PostHog keeps five group types, `$group_0` to `$group_4`. */
   GROUP_TYPES = 5,
   MS_PER_SECOND = 1000,
+  MS_PER_HOUR = 3_600_000,
   PROPERTY_NAME = /^[\w$]+$/,
   NO_SAMPLE: ArmSample = { denominator: { crossSum: 0, sum: 0, sumSquares: 0 }, sum: 0, sumSquares: 0, units: 0 };
 
@@ -199,6 +200,16 @@ async function run(options: PostHogMetricsOptions, query: HogQuery): Promise<Row
   return rowsOf(bodyOf(reply, call));
 }
 
+/** How many units evaluated the flag in the window, whatever it served them: the flag is checked before anyone is on it. */
+function trafficQuery(options: PostHogMetricsOptions, query: TrafficQuery, until: number): HogQuery {
+  const unit = unitColumn(options),
+    grouped = unit === "person_id" ? "" : ` AND ${unit} != ''`;
+  return {
+    query: `SELECT uniqExact(${unit}) AS units FROM events WHERE event = '$feature_flag_called' AND properties.$feature_flag = {flag} AND timestamp >= toDateTime({since}) AND timestamp <= toDateTime({until})${grouped}`,
+    values: { flag: query.flagKey, since: Math.floor((until - query.windowMs) / MS_PER_SECOND), until: Math.floor(until / MS_PER_SECOND) },
+  };
+}
+
 /** The events PostHog has not seen in a month, among those that must have been. */
 function unseen(events: readonly string[], latest: Row | undefined): string[] {
   return events.filter((_event, index) => numberAt(latest, `seen${index}`) === 0);
@@ -225,8 +236,15 @@ function createPostHogMetrics(options: PostHogMetricsOptions): MetricSource {
         watermark = Math.min(until, asOf - options.ingestionLagMs, numberAt(latest, "latest") * MS_PER_SECOND);
       return snapshotFrom(rows, { asOf, query, variants: options.variants ?? DEFAULT_VARIANTS, watermark });
     },
+    traffic: async (query) => {
+      if (!(query.windowMs > 0)) {
+        throw new Error("Traffic is counted over some time.");
+      }
+      const [row] = await run(options, trafficQuery(options, query, options.now() - options.ingestionLagMs));
+      return (numberAt(row, "units") * MS_PER_HOUR) / query.windowMs;
+    },
   };
 }
 
 export type { HogQuery, MetricDefinition, PostHogMetricsOptions };
-export { createPostHogMetrics, latestQuery, snapshotFrom, snapshotQuery };
+export { createPostHogMetrics, latestQuery, snapshotFrom, snapshotQuery, trafficQuery };

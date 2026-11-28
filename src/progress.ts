@@ -1,18 +1,35 @@
+import type { Guardrail, Step } from "./plan.js";
 import type { Observation, Time } from "./observation.js";
 import { enter, needsApproval, nextGate, pauseFor, proceedTo, rollBack } from "./transitions.js";
 import { isInForce, usable } from "./observation.js";
 import type { MetricSnapshot } from "./ports.js";
 import type { RolloutRecord } from "./record.js";
-import type { Step } from "./plan.js";
+import type { Why } from "./transitions.js";
 import { judge } from "./judge.js";
 import { stepAt } from "./plan.js";
 
-function giveUpIfLate(record: RolloutRecord, step: Step, now: number): RolloutRecord {
+const TOO_LITTLE = { detail: "Too little traffic reached this step to judge it in the time allowed.", reason: "insufficient_data" } as const;
+
+function giveUpIfLate(record: RolloutRecord, step: Step, seen: { now: number; why: Why<"insufficient_data" | "unproven"> }): RolloutRecord {
+  const { now, why } = seen;
   if (now - (record.confirmedAt ?? now) <= step.maxDurationMs + record.plan.limits.propagationMs) {
     return record;
   }
-  const why = { detail: "Too little traffic reached this step to judge it in the time allowed.", reason: "insufficient_data" as const };
   return record.plan.onInsufficientData === "rollback" ? rollBack(record, why, now) : pauseFor(record, why, now);
+}
+
+/** Goals that keep the release waiting: only the step before the release asks, and a goal with no reading is not shown better. */
+function unprovenGoals(record: RolloutRecord, snapshot: MetricSnapshot): Guardrail[] {
+  return nextGate(record) === "release" ? [...judge(record.plan, snapshot).unproven] : [];
+}
+
+function unprovenWhy(record: RolloutRecord, snapshot: MetricSnapshot, goals: readonly Guardrail[]): Why<"unproven"> {
+  const { findings } = judge(record.plan, snapshot),
+    readings = goals.map((goal) => {
+      const finding = findings.find((found) => found.metric === goal.metric);
+      return finding === undefined ? `${goal.metric} has too little data to read` : `${goal.metric} is ${finding.treatment} on the new behaviour against ${finding.control} on the old`;
+    });
+  return { detail: `The change was not shown to make things better in the time allowed: ${readings.join("; ")}.`, reason: "unproven" };
 }
 
 /**
@@ -54,6 +71,16 @@ function watch(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapsh
   return watched >= step.minDurationMs && fresh >= step.minFreshUnits;
 }
 
+/** A step whose watch is over goes on to the next gate, unless a goal not yet shown better keeps the release waiting. */
+function passOrWait(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): RolloutRecord {
+  const { now, snapshot } = seen,
+    unproven = unprovenGoals(record, snapshot);
+  if (unproven.length > 0) {
+    return giveUpIfLate(record, step, { now, why: unprovenWhy(record, snapshot, unproven) });
+  }
+  return proceedTo({ ...record, unitsFloor: snapshot.exposed }, nextGate(record), now);
+}
+
 /** With no guardrails a rollout is a timed ramp: each step just waits out its time. */
 function progressUnwatched(record: RolloutRecord, step: Step, now: number): RolloutRecord {
   const waited = now - (record.confirmedAt ?? now) - record.plan.limits.propagationMs;
@@ -73,21 +100,23 @@ function progress(record: RolloutRecord, observation: Observation, time: Time): 
   if (snapshot === null) {
     return record;
   }
-  const based = withBaseline(record, snapshot);
-  return watch(based, step, { now: time.now, snapshot }) ? proceedTo({ ...based, unitsFloor: snapshot.exposed }, nextGate(based), time.now) : giveUpIfLate(based, step, time.now);
+  const based = withBaseline(record, snapshot),
+    seen = { now: time.now, snapshot };
+  return watch(based, step, seen) ? passOrWait(based, step, seen) : giveUpIfLate(based, step, { now: time.now, why: TOO_LITTLE });
 }
 
 /**
  * True when it is safe to go through a gate right now. Before anyone is exposed, or with no guardrails,
  * there is nothing to read. After that the step must be in force and every guardrail readable on fresh
- * metrics: the step may have passed its watch days before the approval came.
+ * metrics, and before the release every goal still shown better: the step may have passed its watch days
+ * before the approval came.
  */
 function evidenceHolds(record: RolloutRecord, observation: Observation, time: Time): boolean {
   if (record.desired.treatment === 0 || record.plan.guardrails.length === 0) {
     return true;
   }
   const snapshot = usable(record, observation.metrics, time);
-  return snapshot !== null && isInForce(record, observation.flag) && isReadable(record, snapshot);
+  return snapshot !== null && isInForce(record, observation.flag) && isReadable(record, snapshot) && unprovenGoals(record, snapshot).length === 0;
 }
 
 /** Goes through the gate a rollout is waiting at, once it has been approved and the evidence still holds. */
