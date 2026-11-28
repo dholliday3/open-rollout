@@ -22,6 +22,7 @@
     "paths": {
       "open-rollout": ["./src/index.ts"],
       "open-rollout/posthog": ["./src/posthog.ts"],
+      "open-rollout/datadog": ["./src/datadog.ts"],
       "open-rollout/tools": ["./src/tools.ts"]
     }
   },

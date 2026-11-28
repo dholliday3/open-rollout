@@ -117,6 +117,11 @@ describe("a chaotic runtime, checked against the truth", () => {
     expect.hasAssertions();
     await expect(all({ ...BASE, plan: GATED }, safetyOnly)).resolves.toStrictEqual([]);
   });
+
+  it("breaks no safety claim, and raises nothing during an incident, while incidents come and go", async () => {
+    expect.hasAssertions();
+    await expect(all({ ...BASE, incidents: true }, safetyOnly)).resolves.toStrictEqual([]);
+  });
 });
 
 describe("a chaotic runtime, once it calms down", () => {
@@ -133,6 +138,11 @@ describe("a chaotic runtime, once it calms down", () => {
   it("always ends, with no machine left to break it and a person saying yes", async () => {
     expect.hasAssertions();
     await expect(all({ ...BASE, people: false }, ends)).resolves.toStrictEqual([]);
+  });
+
+  it("always ends once incidents stop coming and a person says yes", async () => {
+    expect.hasAssertions();
+    await expect(all({ ...BASE, incidents: true, people: false }, ends)).resolves.toStrictEqual([]);
   });
 
   it("always ends after people were at the console too, once they stop and say yes", async () => {

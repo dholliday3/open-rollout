@@ -106,6 +106,18 @@ function progress(record: RolloutRecord, observation: Observation, time: Time): 
 }
 
 /**
+ * While an incident holds the rollout nothing moves on, but the step in force is still watched: its watch
+ * starts as it would, so the time held counts once the incident clears.
+ */
+function keepWatching(record: RolloutRecord, observation: Observation, time: Time): RolloutRecord {
+  const snapshot = usable(record, observation.metrics, time);
+  if (record.phase !== "ramping" || snapshot === null || record.confirmedEpoch !== record.epoch || !isInForce(record, observation.flag)) {
+    return record;
+  }
+  return withBaseline(record, snapshot);
+}
+
+/**
  * True when it is safe to go through a gate right now. Before anyone is exposed, or with no guardrails,
  * there is nothing to read. After that the step must be in force and every guardrail readable on fresh
  * metrics, and before the release every goal still shown better: the step may have passed its watch days
@@ -128,4 +140,4 @@ function throughOpenGate(record: RolloutRecord, observation: Observation, time: 
   return enter(record, gate, time.now);
 }
 
-export { progress, throughOpenGate };
+export { keepWatching, progress, throughOpenGate };

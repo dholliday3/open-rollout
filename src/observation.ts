@@ -1,4 +1,4 @@
-import type { FlagReading, MetricSnapshot } from "./ports.js";
+import type { FlagReading, Incident, MetricSnapshot } from "./ports.js";
 import type { RolloutRecord } from "./record.js";
 import { sameAllocation } from "./allocation.js";
 import { snapshotProblem } from "./judge.js";
@@ -12,6 +12,8 @@ interface Observation {
   readonly metrics: MetricSnapshot | null;
   /** The provider's own word on whether a stale write can land (`FlagControl.refusesStaleWrites`). */
   readonly staleWritesRefused: boolean;
+  /** Incidents open across the product: null when the feed couldn't be read, left out when there is no feed. */
+  readonly incidents?: readonly Incident[] | null | undefined;
 }
 
 /**

@@ -1,6 +1,8 @@
 // A consumer's own TypeScript, compiled against the packed package with every strict option a consumer might turn on.
 import type { MetricSnapshot, PlanRequest, RolloutPlan } from "open-rollout";
 import { createAutopilot, createMemoryFlags, createMemoryMetrics, createMemoryNotifier, createMemoryStore, planProblems, standardPlan } from "open-rollout";
+import type { DatadogTransport } from "open-rollout/datadog";
+import { createDatadogIncidents } from "open-rollout/datadog";
 import type { PostHogTransport } from "open-rollout/posthog";
 import { createPostHogFlags, createPostHogMetrics } from "open-rollout/posthog";
 import { rolloutTools } from "open-rollout/tools";
@@ -26,7 +28,9 @@ const snapshot: MetricSnapshot = {
 const flags = createMemoryFlags();
 const metrics = createMemoryMetrics();
 metrics.set(snapshot);
-const autopilot = createAutopilot({ flags, metrics, notifier: createMemoryNotifier(), store: createMemoryStore() });
+const datadog: DatadogTransport = async () => ({ status: 200, body: [] });
+const incidents = createDatadogIncidents({ transport: datadog, monitorTags: ["open-rollout:hold"] });
+const autopilot = createAutopilot({ flags, metrics, incidents, notifier: createMemoryNotifier(), store: createMemoryStore() });
 const started = await autopilot.start({ id: "checkout-1", plan, now });
 const tools = rolloutTools(autopilot, {
   authorize: (request) => (request.tool === "rollout_start" && request.input.risk === "high" ? { allowed: false, reason: "High risk needs a person." } : { allowed: true }),

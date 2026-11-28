@@ -26,6 +26,8 @@ interface ChaosOptions {
   readonly skewMs: number;
   /** Whether people change the flag by hand and send commands. */
   readonly people: boolean;
+  /** Whether the bench has an incident feed, for incidents to come and go. */
+  readonly incidents?: boolean;
 }
 
 interface Chaos {
@@ -45,6 +47,10 @@ interface Chaos {
   readonly sentAt: Map<string, number>;
   /** When the metric source went down and came back. */
   readonly outages: { at: number; down: boolean }[];
+  /** When an incident opened and cleared. */
+  readonly incidents: { at: number; open: boolean }[];
+  /** When each worker last read the incident feed. */
+  readonly incidentReads: Map<string, number>;
   readonly rejected: string[];
   workers: number;
   commands: number;
@@ -117,6 +123,9 @@ function launch(chaos: Chaos): { name: string; done: Promise<void> } {
 function fate(chaos: Chaos, call: Parked): "pass" | "crash" | "stall" {
   if (call.port === "flags.write" && !chaos.wired.has(call.worker)) {
     chaos.wired.set(call.worker, chaos.bench.now);
+  }
+  if (call.port === "incidents.open") {
+    chaos.incidentReads.set(call.worker, chaos.bench.now);
   }
   if (chaos.random.chance(CRASH_CHANCE)) {
     return "crash";
@@ -197,6 +206,19 @@ async function wakeEveryZombie(chaos: Chaos): Promise<void> {
   await wakeEveryZombie(chaos);
 }
 
+/** The metric source comes back and any incident clears, each noted in its timeline for the oracle. */
+function clearSurroundings(chaos: Chaos): void {
+  const { bench } = chaos;
+  if (bench.metricsDown) {
+    bench.metricsDown = false;
+    chaos.outages.push({ at: bench.now, down: false });
+  }
+  if (bench.incident) {
+    bench.incident = false;
+    chaos.incidents.push({ at: bench.now, open: false });
+  }
+}
+
 /** Everything stops going wrong: faults clear, traffic returns, and every stalled worker finishes what it was doing. */
 async function calm(chaos: Chaos): Promise<void> {
   const { bench } = chaos;
@@ -204,17 +226,30 @@ async function calm(chaos: Chaos): Promise<void> {
   Object.assign(bench.store.faults, { down: false, failChance: 0, lostReplyChance: 0 });
   bench.notifier.down = false;
   bench.perMinute = SECOND;
-  if (bench.metricsDown) {
-    bench.metricsDown = false;
-    chaos.outages.push({ at: bench.now, down: false });
-  }
+  clearSurroundings(chaos);
   await wakeEveryZombie(chaos);
   note(chaos, "calm");
 }
 
 async function runChaos(options: ChaosOptions): Promise<Chaos> {
-  const bench = createBench({ checksRevision: options.checksRevision, plan: options.plan }),
-    chaos: Chaos = { bench, commands: 0, gate: createGate(), options, outages: [], random: createRandom(options.seed), rejected: [], sent: new Map<string, Command>(), sentAt: new Map<string, number>(), story: [], wired: new Map<string, number>(), workers: 0, zombies: [] };
+  const bench = createBench({ checksRevision: options.checksRevision, incidents: options.incidents, plan: options.plan }),
+    chaos: Chaos = {
+      bench,
+      commands: 0,
+      gate: createGate(),
+      incidentReads: new Map<string, number>(),
+      incidents: [],
+      options,
+      outages: [],
+      random: createRandom(options.seed),
+      rejected: [],
+      sent: new Map<string, Command>(),
+      sentAt: new Map<string, number>(),
+      story: [],
+      wired: new Map<string, number>(),
+      workers: 0,
+      zombies: [],
+    };
   bench.served.push({ at: bench.now, control: 0, treatment: 0 });
   await bench.autopilot.start({ id: ROLLOUT_ID, now: bench.now, plan: bench.plan });
   await rounds(chaos, options.rounds);

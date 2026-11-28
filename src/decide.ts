@@ -1,9 +1,10 @@
 import { NOBODY, sameAllocation } from "./allocation.js";
 import type { Observation, Time } from "./observation.js";
 import { expire, guard } from "./guard.js";
+import { holdOf, noteHold } from "./hold.js";
 import { isDone, withEvent } from "./record.js";
 import { isLateWrite, reconcile, retreat } from "./reconcile.js";
-import { progress, throughOpenGate } from "./progress.js";
+import { keepWatching, progress, throughOpenGate } from "./progress.js";
 import type { Allocation } from "./allocation.js";
 import type { FlagReading } from "./ports.js";
 import type { RolloutRecord } from "./record.js";
@@ -92,7 +93,7 @@ function mustWait(record: RolloutRecord, flag: FlagReading, seen: { observation:
   if (record.desired.treatment <= flag.allocation.treatment) {
     return false;
   }
-  return record.phase === "paused" || isBlind(record, seen.observation, seen.time) || isWaiting(record, seen.time.now);
+  return record.phase === "paused" || isBlind(record, seen.observation, seen.time) || isWaiting(record, seen.time.now) || holdOf(record, seen.observation) !== null;
 }
 
 /**
@@ -132,7 +133,10 @@ function decide(record: RolloutRecord, observed: Observation, wallNow: number): 
     current = expire(retreat(sifted.record, observation.flag, time.now), time.now),
     // The flag first, so a step is seen in force before its guardrails are read; then the guardrails, so nothing moves on over a regression.
     guarded = guard(reconcile(current, observation, time.now), observation.metrics, time),
-    progressed = progress(throughOpenGate(guarded, observation, time), observation, time);
+    hold = holdOf(guarded, observation),
+    noted = noteHold(guarded, hold, time.now),
+    // An incident that hits both arms stops everything moving forward; the guardrails above still act.
+    progressed = hold === null ? progress(throughOpenGate(noted, observation, time), observation, time) : keepWatching(noted, observation, time);
   return owe(progressed, observation, time);
 }
 

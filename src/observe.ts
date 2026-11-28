@@ -50,4 +50,18 @@ async function readMetrics(ports: Ports, record: RolloutRecord, problems: string
   }
 }
 
-export { messageOf, readFlag, readMetrics };
+/** The incidents open now, when there is a feed and the rollout could still spread: null when the feed couldn't be read. */
+async function readIncidents(ports: Ports, record: RolloutRecord, problems: string[]): Promise<Observation["incidents"]> {
+  if (ports.incidents === undefined || !isOpen(record)) {
+    return undefined;
+  }
+  try {
+    const incidents = await ports.incidents.open();
+    return incidents;
+  } catch (error) {
+    problems.push(`Reading the incidents failed: ${messageOf(error)}`);
+    return null;
+  }
+}
+
+export { messageOf, readFlag, readIncidents, readMetrics };

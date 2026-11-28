@@ -17,6 +17,10 @@
       "types": "./dist/posthog.d.ts",
       "default": "./dist/posthog.js"
     },
+    "./datadog": {
+      "types": "./dist/datadog.d.ts",
+      "default": "./dist/datadog.js"
+    },
     "./tools": {
       "types": "./dist/tools.d.ts",
       "default": "./dist/tools.js"

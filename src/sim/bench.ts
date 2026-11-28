@@ -1,4 +1,4 @@
-import type { ArmPair, FlagControl, MetricQuery, MetricSnapshot, MetricSource, Ports } from "../ports.js";
+import type { ArmPair, FlagControl, Incident, IncidentFeed, MetricQuery, MetricSnapshot, MetricSource, Ports } from "../ports.js";
 import type { SimNotifier, SimStore } from "./store.js";
 import { createSimNotifier, createSimStore } from "./store.js";
 import type { Autopilot } from "../controller.js";
@@ -26,6 +26,9 @@ interface Bench {
   readonly store: SimStore;
   readonly notifier: SimNotifier;
   readonly plan: RolloutPlan;
+  /** A monitoring system's incidents, when the bench has one; `incident` says whether one is open. */
+  readonly incidents?: IncidentFeed;
+  incident: boolean;
   now: number;
   /** Units a minute across all traffic. */
   perMinute: number;
@@ -52,6 +55,8 @@ interface Seen {
 interface BenchOptions {
   readonly plan?: Partial<RolloutPlan> | undefined;
   readonly checksRevision?: boolean | undefined;
+  /** Gives the bench an incident feed. */
+  readonly incidents?: boolean | undefined;
 }
 
 const MINUTE = 60_000,
@@ -89,8 +94,19 @@ function benchPlan(overrides: Partial<RolloutPlan> = {}): RolloutPlan {
   };
 }
 
-/** Everything in a bench but the two parts that are built on top of the rest. */
-type Parts = Omit<Bench, "autopilot" | "metrics">;
+/** Everything in a bench but the parts that are built on top of the rest. */
+type Parts = Omit<Bench, "autopilot" | "metrics" | "incidents">;
+
+const EVERYONE_SEES_IT: Incident = { id: "incident-1", title: "Errors up everywhere" };
+
+function incidentsOf(bench: Parts): IncidentFeed {
+  return {
+    open: async () => {
+      await Promise.resolve();
+      return bench.incident ? [EVERYONE_SEES_IT] : [];
+    },
+  };
+}
 
 /** What the source has counted since `since`: everything, less what it had counted when that instant was first asked for. */
 function honestSnapshot(bench: Parts, since = START): MetricSnapshot {
@@ -143,6 +159,7 @@ function partsOf(options: BenchOptions): Parts {
     distort: (snapshot) => snapshot,
     errorRate: { control: BASE_ERROR_RATE, treatment: BASE_ERROR_RATE },
     flags: provider.controlFor("autopilot"),
+    incident: false,
     lagMs: 0,
     marks: new Map<number, Seen>(),
     metricReads: 0,
@@ -167,8 +184,9 @@ function partsOf(options: BenchOptions): Parts {
 function createBench(options: BenchOptions = {}): Bench {
   const parts = partsOf(options),
     metrics = metricsOf(parts),
-    autopilot = createAutopilot({ flags: parts.flags, metrics, notifier: parts.notifier, store: parts.store });
-  return Object.assign(parts, { autopilot, metrics });
+    incidents = options.incidents === true ? { incidents: incidentsOf(parts) } : {},
+    autopilot = createAutopilot({ flags: parts.flags, metrics, notifier: parts.notifier, store: parts.store, ...incidents });
+  return Object.assign(parts, { autopilot, metrics, ...incidents });
 }
 
 /** Some time of traffic through whatever the flag really serves. */
@@ -219,7 +237,7 @@ async function send(bench: Bench, command: Command): Promise<string> {
 
 /** Another worker on the same world, with its own name in the provider's list of changes and its port calls behind a gate. */
 function gatedWorker(bench: Bench, gate: Gate, name: string): Autopilot {
-  const ports: Ports = { flags: bench.provider.controlFor(name), metrics: bench.metrics, notifier: bench.notifier, store: bench.store };
+  const ports: Ports = { flags: bench.provider.controlFor(name), metrics: bench.metrics, notifier: bench.notifier, store: bench.store, ...(bench.incidents === undefined ? {} : { incidents: bench.incidents }) };
   return createAutopilot(gate.portsFor(name, ports));
 }
 

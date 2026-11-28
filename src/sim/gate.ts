@@ -8,7 +8,7 @@ import type { Ports } from "../ports.js";
  * gap. A parked call that is never let through is a crashed worker; one let through much later is a zombie.
  */
 
-type PortName = "flags.read" | "flags.write" | "metrics.snapshot" | "notifier.notify" | "store.create" | "store.listUnsettled" | "store.load" | "store.save";
+type PortName = "flags.read" | "flags.write" | "metrics.snapshot" | "incidents.open" | "notifier.notify" | "store.create" | "store.listUnsettled" | "store.load" | "store.save";
 
 /** One port call a worker is waiting on. */
 interface Parked {
@@ -88,7 +88,9 @@ function behind<Given extends unknown[], Value>(desk: Desk, call: Call, run: (..
 }
 
 function gated(desk: Desk, worker: string, ports: Ports): Ports {
+  const { incidents } = ports;
   return {
+    ...(incidents === undefined ? {} : { incidents: { open: behind(desk, { port: "incidents.open", worker }, incidents.open) } }),
     flags: {
       read: behind(desk, { port: "flags.read", worker }, ports.flags.read),
       refusesStaleWrites: ports.flags.refusesStaleWrites,

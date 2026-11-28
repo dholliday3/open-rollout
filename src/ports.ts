@@ -78,6 +78,22 @@ interface MetricSource {
   readonly traffic?: (query: TrafficQuery) => Promise<number>;
 }
 
+/** Something wrong across the whole product right now, such as a monitor in alert. */
+interface Incident {
+  readonly id: string;
+  /** What is wrong, in a few words, for the rollout's events. */
+  readonly title: string;
+}
+
+/**
+ * Where the product's incidents are known: a monitoring system. An incident hits both arms alike, so no
+ * guardrail can see it; while any is open a rollout raises no exposure and goes through no gate.
+ */
+interface IncidentFeed {
+  /** The incidents open now. An empty list is the all-clear; a call that throws is no answer, and holds. */
+  open: () => Promise<readonly Incident[]>;
+}
+
 interface Stored {
   readonly record: RolloutRecord;
   readonly version: number;
@@ -107,6 +123,8 @@ interface Ports {
   readonly metrics: MetricSource;
   readonly store: RolloutStore;
   readonly notifier: Notifier;
+  /** Optional. Without it nothing holds a rollout for an incident that hits both arms. */
+  readonly incidents?: IncidentFeed;
 }
 
-export type { ArmPair, FlagControl, FlagReading, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored, TrafficQuery };
+export type { ArmPair, FlagControl, FlagReading, Incident, IncidentFeed, MetricQuery, MetricSnapshot, MetricSource, Notifier, Ports, RolloutStore, Stored, TrafficQuery };

@@ -166,6 +166,23 @@ function raisedWhilePaused(chaos: Chaos): string[] {
   return problems;
 }
 
+function incidentWasOpen(chaos: Chaos, at: number): boolean {
+  return lastWhere(chaos.incidents, (incident) => incident.at <= at)?.open ?? false;
+}
+
+/** Nothing the library sends raises exposure when its worker read the incident feed while an incident was open, unless a person forced a release. */
+function raisedDuringIncident(chaos: Chaos): string[] {
+  const changes = chaos.bench.provider.changes(FLAG_KEY);
+  return changes.flatMap((change, index) => {
+    const previous = changes.at(Math.max(0, index - 1)) ?? change,
+      readAt = chaos.incidentReads.get(change.by);
+    if (isPerson(change) || change.allocation.treatment <= previous.allocation.treatment || readAt === undefined || !incidentWasOpen(chaos, readAt) || forced(chaos, change.at)) {
+      return [];
+    }
+    return [`hold: ${change.by} raised the flag from ${previous.allocation.treatment} to ${change.allocation.treatment} after reading an open incident`];
+  });
+}
+
 /** What each event key was used for; a key used for two different events is a problem. */
 function eventsByKey(chaos: Chaos, problems: string[]): Map<string, string> {
   const byKey = new Map<string, string>();
@@ -244,7 +261,7 @@ function aboveHalfEarly(chaos: Chaos): string[] {
 
 /** Every safety invariant that can be read off the histories, as sentences; empty when all held. */
 function safetyViolations(chaos: Chaos): string[] {
-  return [...writesNobodyAskedFor(chaos), ...skippedSteps(chaos), ...aboveHalfEarly(chaos), ...forwardWithoutEvidence(chaos), ...rollbackUndone(chaos), ...raisedWhilePaused(chaos), ...repeatedEffects(chaos), ...chaos.rejected];
+  return [...writesNobodyAskedFor(chaos), ...skippedSteps(chaos), ...aboveHalfEarly(chaos), ...forwardWithoutEvidence(chaos), ...rollbackUndone(chaos), ...raisedWhilePaused(chaos), ...raisedDuringIncident(chaos), ...repeatedEffects(chaos), ...chaos.rejected];
 }
 
 export { lostEvents, notConverged, safetyViolations };

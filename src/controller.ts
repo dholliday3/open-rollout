@@ -3,7 +3,7 @@ import type { Ports, Stored } from "./ports.js";
 import { acknowledge, applyWrite } from "./write.js";
 import { isDone, newRecord, withEvent } from "./record.js";
 import { judge, snapshotProblem } from "./judge.js";
-import { messageOf, readFlag, readMetrics } from "./observe.js";
+import { messageOf, readFlag, readIncidents, readMetrics } from "./observe.js";
 import { planProblems, samePlan } from "./plan.js";
 import type { Judgement } from "./judge.js";
 import type { RolloutPlan } from "./plan.js";
@@ -113,7 +113,8 @@ async function tick(ports: Ports, id: string, now: number): Promise<TickResult> 
     // The flag first, then the metrics: a step's watch starts from a snapshot asked for after the flag was seen serving it.
     flag = await readFlag(ports, stored.record, problems),
     metrics = await readMetrics(ports, stored.record, problems),
-    decision = decide(stored.record, { flag, metrics, staleWritesRefused: ports.flags.refusesStaleWrites }, now),
+    incidents = await readIncidents(ports, stored.record, problems),
+    decision = decide(stored.record, { flag, incidents, metrics, staleWritesRefused: ports.flags.refusesStaleWrites }, now),
     // The decision is saved before anything acts on it: only the worker whose save wins may touch the flag.
     version = decision.record === stored.record ? stored.version : await ports.store.save(decision.record, stored.version);
   if (version === null) {

@@ -88,6 +88,15 @@ function brokenSurroundings(chaos: Chaos): (() => void)[] {
     () => {
       bench.perMinute = bench.perMinute > 0 ? 0 : SECOND;
     },
+    // Only a bench with an incident feed has incidents, so the runs of every other configuration draw as they always did.
+    ...(bench.incidents === undefined
+      ? []
+      : [
+          () => {
+            bench.incident = !bench.incident;
+            chaos.incidents.push({ at: bench.now, open: bench.incident });
+          },
+        ]),
   ];
 }
 

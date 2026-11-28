@@ -32,6 +32,8 @@ type EventType =
   | "metrics_restored"
   | "drift_corrected"
   | "external_change"
+  | "incident_hold"
+  | "incident_cleared"
   | "rolling_back"
   | "rolled_back"
   | "releasing"
@@ -64,6 +66,12 @@ interface RolloutEvent {
 
 interface Pause {
   readonly reason: PauseReason;
+  readonly since: number;
+  readonly detail: string;
+}
+
+/** An incident across the product is holding the rollout where it is. It lifts by itself when the incident clears. */
+interface Hold {
   readonly since: number;
   readonly detail: string;
 }
@@ -139,6 +147,8 @@ interface RolloutRecord {
   /** The latest time this record was changed at; time never runs backwards past it. */
   readonly clock: number;
   readonly pause: Pause | null;
+  /** Set while an incident holds the rollout; missing on a record from before holds. */
+  readonly hold?: Hold | null;
   readonly pendingGate: Gate | null;
   readonly approvedGates: readonly Gate[];
   readonly outcome: Outcome | null;
@@ -230,5 +240,5 @@ function newRecord(id: string, plan: RolloutPlan, now: number): RolloutRecord {
   };
 }
 
-export type { Baseline, CommandEntry, EventType, Finding, Gate, Outcome, Pause, PauseReason, Phase, RollbackReason, RolloutEvent, RolloutRecord, WriteAttempt };
+export type { Baseline, CommandEntry, EventType, Finding, Gate, Hold, Outcome, Pause, PauseReason, Phase, RollbackReason, RolloutEvent, RolloutRecord, WriteAttempt };
 export { RECORD_SCHEMA_VERSION, isDone, isLive, newRecord, withCommand, withEvent };

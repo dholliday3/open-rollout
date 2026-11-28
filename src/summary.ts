@@ -37,12 +37,22 @@ function stepOf(record: RolloutRecord): string {
   return record.stepIndex < 0 ? "not started" : `${record.stepIndex + 1} of ${record.plan.steps.length}`;
 }
 
-function headlineOf(record: RolloutRecord, judgement: Judgement | null): string {
+/** Why the rollout is stopped where it is, if it is: an outcome, a pause, or an incident's hold. */
+function stoppedBy(record: RolloutRecord): string | null {
   if (record.outcome !== null) {
     return record.outcome.detail;
   }
   if (record.pause !== null) {
     return `Paused: ${record.pause.detail}`;
+  }
+  const hold = record.hold ?? null;
+  return hold === null ? null : `Held: ${hold.detail} Nothing moves forward until it clears.`;
+}
+
+function headlineOf(record: RolloutRecord, judgement: Judgement | null): string {
+  const stopped = stoppedBy(record);
+  if (stopped !== null) {
+    return stopped;
   }
   if (record.pendingGate !== null && record.phase === "awaiting_approval") {
     return `Waiting for approval of ${gateName(record, record.pendingGate)}.`;
