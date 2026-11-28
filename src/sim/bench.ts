@@ -184,12 +184,30 @@ function partsOf(options: BenchOptions): Parts {
   };
 }
 
+/** The bench's incident feed as one worker reads it, noting what each read answered when it really ran. */
+function incidentsSeenBy(bench: Pick<Bench, "incidents" | "incidentSeen">, name: string): Pick<Ports, "incidents"> {
+  const feed = bench.incidents;
+  if (feed === undefined) {
+    return {};
+  }
+  return {
+    incidents: {
+      open: async () => {
+        const open = await feed.open();
+        bench.incidentSeen.set(name, open.length > 0);
+        return open;
+      },
+    },
+  };
+}
+
 function createBench(options: BenchOptions = {}): Bench {
   const parts = partsOf(options),
     metrics = metricsOf(parts),
     incidents = options.incidents === true ? { incidents: incidentsOf(parts) } : {},
-    autopilot = createAutopilot({ flags: parts.flags, metrics, notifier: parts.notifier, store: parts.store, ...incidents });
-  return Object.assign(parts, { autopilot, metrics, ...incidents });
+    bench = Object.assign(parts, { metrics, ...incidents }),
+    autopilot = createAutopilot({ flags: parts.flags, metrics, notifier: parts.notifier, store: parts.store, ...incidentsSeenBy(bench, "autopilot") });
+  return Object.assign(bench, { autopilot });
 }
 
 /** Some time of traffic through whatever the flag really serves. */
@@ -236,23 +254,6 @@ async function startedBench(options: BenchOptions = {}): Promise<Bench> {
 async function send(bench: Bench, command: Command): Promise<string> {
   const outcome = await bench.autopilot.command(ROLLOUT_ID, command, bench.now);
   return outcome.status;
-}
-
-/** The bench's incident feed as one worker reads it, noting what each read answered when it really ran. */
-function incidentsSeenBy(bench: Bench, name: string): Pick<Ports, "incidents"> {
-  const feed = bench.incidents;
-  if (feed === undefined) {
-    return {};
-  }
-  return {
-    incidents: {
-      open: async () => {
-        const open = await feed.open();
-        bench.incidentSeen.set(name, open.length > 0);
-        return open;
-      },
-    },
-  };
 }
 
 /** Another worker on the same world, with its own name in the provider's list of changes and its port calls behind a gate. */

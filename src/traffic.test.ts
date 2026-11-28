@@ -18,6 +18,9 @@ const HOUR = 3_600_000,
   RARE = 100,
   DESERTED = 5,
   ONE_PERCENT_HOURS = 50,
+  /** 50 units an arm in an hour at 10%. */
+  LAGGED_TRAFFIC = 500,
+  SEVENTY_ONE_MINUTES = 4_260_000,
   PATIENCE = 6,
   STEP_COUNT = 4,
   medium = standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium" });
@@ -34,7 +37,7 @@ describe("a forecast of a plan on its traffic", () => {
   it("says which step can't gather its units before it gives up on a quiet path, and how long it would need", () => {
     expect.hasAssertions();
     const outlook = forecast(medium, QUIET);
-    expect(outlook.problems).toStrictEqual(["Step 1 (1% an arm) needs about 8.3 hours to give each arm 50 new units, but gives up after 61 minutes."]);
+    expect(outlook.problems).toStrictEqual(["Step 1 (1% an arm) needs about 8.4 hours to give each arm 50 new units, but gives up after 61 minutes."]);
     expect(outlook.steps[0].unitsMs).toBeCloseTo(QUIET_FIRST_STEP_MS);
   });
 
@@ -42,6 +45,14 @@ describe("a forecast of a plan on its traffic", () => {
     expect.hasAssertions();
     expect(forecast(medium, 0).problems).toStrictEqual(["Nobody evaluates fix, so no step can gather units. Deploy the code that checks the flag first, or ship the change without one."]);
     expect(forecast({ ...medium, guardrails: [] }, 0)).toMatchObject({ problems: [], steps: medium.steps.map(() => ({ finishes: true, unitsMs: 0 })) });
+  });
+
+  it("counts the source's lag against a step's deadline, since units are only seen once the metrics catch up", () => {
+    expect.hasAssertions();
+    const lagging = standardPlan({ flagKey: "fix", guardrails: ERRORS, overrides: { everyStep: { maxDurationMs: SEVENTY_ONE_MINUTES } }, risk: "low", sourceLagMs: HOUR }),
+      outlook = forecast(lagging, LAGGED_TRAFFIC);
+    expect(outlook.steps[0]).toMatchObject({ finishes: false, unitsMs: HOUR });
+    expect(outlook.problems[0]).toBe("Step 1 (10% an arm) needs about 121 minutes to give each arm 50 new units and see them in the metrics, but gives up after 72 minutes.");
   });
 
   it("adds the metric source's lag to every step", () => {
@@ -54,7 +65,7 @@ describe("a forecast of a plan on its traffic", () => {
 describe("a standard plan sized to its traffic", () => {
   it("keeps the ladder's watches where the traffic is busy enough for them", () => {
     expect.hasAssertions();
-    expect(standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium", unitsPerHour: BUSY })).toStrictEqual(medium);
+    expect(standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium", unitsPerHour: BUSY })).toStrictEqual({ ...medium, unitsPerHour: BUSY });
   });
 
   it("stretches each step to the time its units take to arrive, and gets through on that traffic", () => {
@@ -69,9 +80,10 @@ describe("a standard plan sized to its traffic", () => {
 
   it("is refused when a step would wait longer than a rollout may go without progress", () => {
     expect.hasAssertions();
-    const sized = standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium", unitsPerHour: DESERTED });
-    expect(forecast(sized, DESERTED).problems[0]).toBe("Step 1 (1% an arm) should take about 41.7 days, longer than a rollout may go without progress (21.0 days). The path is too quiet to flag: ship the change without one.");
-    expect(planProblems(sized)[0]).toMatch(/^Step 1 may wait 250\.0 days for its units, longer than a rollout may go without progress \(expireAfterIdleMs, 21\.0 days\)/u);
+    const sized = standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium", unitsPerHour: DESERTED }),
+      [refusal] = planProblems(sized);
+    expect(refusal).toMatch(/^Step 1 may wait 41\.7 days for its units, longer than a rollout may go without progress \(expireAfterIdleMs, 21\.0 days\)/u);
+    expect(forecast(sized, DESERTED).problems[0]).toBe(refusal);
   });
 
   it("leaves the ladder alone for traffic that is no number, and for a step the overrides already time", () => {

@@ -1,5 +1,7 @@
 import { FULL_SHARE } from "./allocation.js";
 import type { RolloutPlan } from "./plan.js";
+import { duration } from "./duration.js";
+import { planProblems } from "./plan.js";
 
 /**
  * How long a plan takes on the traffic a flag really gets. A unit counts toward a step only once its request
@@ -32,24 +34,8 @@ interface Forecast {
 }
 
 const MS_PER_HOUR = 3_600_000,
-  MS_PER_MINUTE = 60_000,
-  PERCENT_PER_SHARE = 100,
-  MS_PER_DAY = 86_400_000,
-  /** Below this many hours a duration reads better in minutes, and below this many days in hours. */
-  FEW_HOURS = 3,
-  FEW_DAYS = 3;
+  PERCENT_PER_SHARE = 100;
 
-/** A length of time in the unit a person would say it in: minutes, hours, or days. */
-function duration(ms: number): string {
-  if (!Number.isFinite(ms)) {
-    return "forever";
-  }
-  if (ms < FEW_HOURS * MS_PER_HOUR) {
-    const whole = Math.ceil(ms / MS_PER_MINUTE);
-    return whole === 1 ? "1 minute" : `${whole} minutes`;
-  }
-  return ms < FEW_DAYS * MS_PER_DAY ? `${(ms / MS_PER_HOUR).toFixed(1)} hours` : `${(ms / MS_PER_DAY).toFixed(1)} days`;
-}
 
 /** How long one arm at this share takes to gain this many new units. Forever when nobody arrives. */
 function timeForUnits(units: number, share: number, unitsPerHour: number): number {
@@ -65,35 +51,40 @@ function stepForecast(plan: RolloutPlan, index: number, unitsPerHour: number): S
     { propagationMs, sourceLagMs = 0 } = plan.limits,
     unitsMs = timeForUnits(step.minFreshUnits, step.treatmentShare, unitsPerHour),
     deadlineMs = step.maxDurationMs + propagationMs;
-  return { deadlineMs, expectedMs: Math.max(step.minDurationMs, unitsMs) + propagationMs + sourceLagMs, finishes: unitsMs <= step.maxDurationMs, treatmentShare: step.treatmentShare, unitsMs };
+  const expectedMs = Math.max(step.minDurationMs, unitsMs) + propagationMs + sourceLagMs;
+  // The units are counted only once the metrics have caught up with them, so the source's lag comes before the deadline too.
+  return { deadlineMs, expectedMs, finishes: expectedMs <= deadlineMs, treatmentShare: step.treatmentShare, unitsMs };
 }
 
 function problemOf(plan: RolloutPlan, expected: StepForecast, index: number): string[] {
-  const name = `Step ${index + 1} (${expected.treatmentShare / PERCENT_PER_SHARE}% an arm)`,
-    { expireAfterIdleMs } = plan.limits;
-  if (!expected.finishes) {
-    return [`${name} needs about ${duration(expected.unitsMs)} to give each arm ${plan.steps[index].minFreshUnits} new units, but gives up after ${duration(expected.deadlineMs)}.`];
+  if (expected.finishes) {
+    return [];
   }
-  // A step that takes longer than the rollout may go without progress is undone before it can pass.
-  return expected.expectedMs < expireAfterIdleMs ? [] : [`${name} should take about ${duration(expected.expectedMs)}, longer than a rollout may go without progress (${duration(expireAfterIdleMs)}). The path is too quiet to flag: ship the change without one.`];
+  const counted = (plan.limits.sourceLagMs ?? 0) > 0 ? " and see them in the metrics" : "";
+  return [`Step ${index + 1} (${expected.treatmentShare / PERCENT_PER_SHARE}% an arm) needs about ${duration(expected.expectedMs)} to give each arm ${plan.steps[index].minFreshUnits} new units${counted}, but gives up after ${duration(expected.deadlineMs)}.`];
+}
+
+/** Why no step can gather units on this traffic, or nothing. */
+function nobodyProblems(plan: RolloutPlan, unitsPerHour: number): string[] {
+  if (plan.guardrails.length === 0 || (Number.isFinite(unitsPerHour) && unitsPerHour > 0)) {
+    return [];
+  }
+  return [`Nobody evaluates ${plan.flagKey}, so no step can gather units. Deploy the code that checks the flag first, or ship the change without one.`];
 }
 
 /**
- * Each step's time on this much traffic, and why the plan won't get through on it. A plan with no guardrails
- * waits out its time whatever the traffic. `unitsPerHour` is an average: a step that falls in a quiet night
- * takes longer, which each step's `maxDurationMs` is there to absorb.
+ * Each step's time on this much traffic, and why the plan won't get through on it: what `planProblems`
+ * refuses, then each step that can't gather its units before it gives up. A plan with no guardrails waits
+ * out its time whatever the traffic. `unitsPerHour` is an average: a step that falls in a quiet night takes
+ * longer, which each step's `maxDurationMs` is there to absorb.
  */
 function forecast(plan: RolloutPlan, unitsPerHour: number): Forecast {
   const traffic = plan.guardrails.length === 0 ? Number.POSITIVE_INFINITY : Math.max(0, unitsPerHour),
     steps = plan.steps.map((_step, index) => stepForecast(plan, index, traffic)),
-    nobody = Number.isFinite(unitsPerHour) && unitsPerHour > 0 ? [] : [`Nobody evaluates ${plan.flagKey}, so no step can gather units. Deploy the code that checks the flag first, or ship the change without one.`];
-  return {
-    expectedMs: steps.reduce((total, step) => total + step.expectedMs, 0),
-    problems: plan.guardrails.length === 0 ? [] : [...nobody, ...(nobody.length > 0 ? [] : steps.flatMap((step, index) => problemOf(plan, step, index)))],
-    steps,
-    unitsPerHour,
-  };
+    nobody = nobodyProblems(plan, unitsPerHour),
+    late = plan.guardrails.length === 0 || nobody.length > 0 ? [] : steps.flatMap((step, index) => problemOf(plan, step, index));
+  return { expectedMs: steps.reduce((total, step) => total + step.expectedMs, 0), problems: [...planProblems(plan), ...nobody, ...late], steps, unitsPerHour };
 }
 
 export type { Forecast, StepForecast };
-export { duration, forecast, timeForUnits };
+export { forecast, timeForUnits };

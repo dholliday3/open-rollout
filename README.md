@@ -141,7 +141,8 @@ plain objects, so you can write your own and check them with `planProblems(plan)
 
 Three options adjust a standard plan: `sourceLagMs` for metrics that run behind, such as a warehouse
 loaded hourly; `unitsPerHour`, the people (or accounts) an hour that reach the flag, which stretches each
-step to the time its units take to arrive; and `overrides` for its steps, limits and policies.
+step to the time its units take to arrive (never past the rollout's expiry); and `overrides` for its
+steps, limits and policies.
 `forecast(plan, unitsPerHour)` says how long a plan takes on that traffic, and which step can't get
 through.
 

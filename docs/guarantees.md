@@ -79,9 +79,10 @@ watched again.
    clean ticks bring the flag to `record.desired`, unless a person lowered it, which is reported and left.
 8. **An incident holds everything.** While the incident feed reports an open incident, or can't be read,
    no step-up, gate or release happens and no write raises exposure. The guardrails still act, a rollback
-   still wins, a release a person forced still goes out, and the step's watch keeps running. The hold lifts
-   by itself, with one `incident_hold` and one `incident_cleared` event. A write already on the wire when
-   the incident opens still lands, as with a pause.
+   still wins, a release a person forced still goes out, and the step's watch keeps running. A release
+   that a stalled worker's late write lowered is put back only once the incident clears. The hold lifts by
+   itself, with one `incident_hold` and one `incident_cleared` event. A write already on the wire when the
+   incident opens still lands, as with a pause.
 
 ## What a runtime sees
 
@@ -107,6 +108,9 @@ watched again.
   whose provider says no step can be written to it (`FlagControl.setupProblem`).
 - **`traffic(flagKey)`** gives the units an hour that evaluated the flag over the last day, or null when
   the metric source can't say. It never throws.
+- **`rollout_start` sent again** with the same input finds its own rollout even when the traffic has moved
+  since: a plan sized to traffic keeps it as `plan.unitsPerHour`, and a start for an id that exists is
+  sized to that.
 - **Agent tools** run every call they are given, whoever the `actor` is, unless
   `rolloutTools(autopilot, { authorize })` refuses it. The hook sees the tool's name, its input and the
   call (`actor`, `callKey`, `now`) before anything runs, `rollout_status` included. A refused call changes

@@ -207,6 +207,13 @@ describe("recipe: a bug fix that must be shown to work", () => {
     expect(run.record).toMatchObject({ pause: { reason: "unproven" }, phase: "paused" });
   });
 
+  it("gives a quiet path that can still get through steps of days, and the rollout starts", async () => {
+    expect.hasAssertions();
+    const run = await fixRun({ control: 0.05, treatment: 0 }, 5 / 60);
+    expect(run.plan?.steps[0]?.minDurationMs).toBe(100 * 60 * MINUTE);
+    expect(run.record?.phase).toBe("ramping");
+  });
+
   it("answers no plan on a path too quiet to flag, so the fix ships without one", async () => {
     expect.hasAssertions();
     await expect(fixRun({ control: 0.05, treatment: 0 }, 0.01)).resolves.toMatchObject({ plan: null });

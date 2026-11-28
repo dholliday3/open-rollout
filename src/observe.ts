@@ -50,9 +50,14 @@ async function readMetrics(ports: Ports, record: RolloutRecord, problems: string
   }
 }
 
-/** The incidents open now, when there is a feed and the rollout could still spread: null when the feed couldn't be read. */
+/**
+ * The incidents open now, when there is a feed and a write could still raise exposure: while the rollout
+ * could spread, and while a release is watched for a stalled worker's late write. Null when the feed
+ * couldn't be read.
+ */
 async function readIncidents(ports: Ports, record: RolloutRecord, problems: string[]): Promise<Observation["incidents"]> {
-  if (ports.incidents === undefined || !isOpen(record)) {
+  const couldRaise = isOpen(record) || (record.phase === "released" && !record.settled);
+  if (ports.incidents === undefined || !couldRaise) {
     return undefined;
   }
   try {

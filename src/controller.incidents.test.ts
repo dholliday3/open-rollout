@@ -1,7 +1,7 @@
+import { EVERYBODY, measuredStep } from "./allocation.js";
 import { FIRST_SHARE, FLAG_KEY, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, recordOf, runFor, treatmentShare } from "./__tests__/world.js";
+import type { FlagControl, Incident } from "./ports.js";
 import { describe, expect, it, vi } from "vitest";
-import { EVERYBODY } from "./allocation.js";
-import type { Incident } from "./ports.js";
 import type { World } from "./__tests__/world.js";
 import { createAutopilot } from "./controller.js";
 import { summarize } from "./summary.js";
@@ -19,7 +19,7 @@ const OUTAGE: Incident = { id: "monitor-1", title: "Checkout API 5xx above 2%" }
   BROKEN = 0.5;
 
 /** The test world's rollout, driven by an autopilot that also reads an incident feed this test controls. */
-function withFeed(world: World): { feed: { incidents: readonly Incident[] | Error }; world: World } {
+function withFeed(world: World, flags: FlagControl = world.flags): { feed: { incidents: readonly Incident[] | Error }; world: World } {
   const feed: { incidents: readonly Incident[] | Error } = { incidents: [] },
     incidents = {
       open: async (): Promise<readonly Incident[]> => {
@@ -30,7 +30,7 @@ function withFeed(world: World): { feed: { incidents: readonly Incident[] | Erro
         return feed.incidents;
       },
     };
-  return { feed, world: { ...world, autopilot: createAutopilot({ flags: world.flags, incidents, metrics: world.metrics, notifier: world.notifier, store: world.store }) } };
+  return { feed, world: { ...world, autopilot: createAutopilot({ flags, incidents, metrics: world.metrics, notifier: world.notifier, store: world.store }) } };
 }
 
 async function headlineOf(world: World): Promise<string> {
@@ -109,5 +109,29 @@ describe("a rollout whose incident feed fails", () => {
     await world.autopilot.command(ROLLOUT_ID, { by: "dana", id: "c1", type: "release" }, world.now);
     await runFor(world, 1);
     expect(world.flags.peek(FLAG_KEY).allocation).toStrictEqual(EVERYBODY);
+  });
+});
+
+/** A rollout released on a provider that can't refuse a stale write, still being watched before it settles. */
+async function releasedOnLooseProvider(): Promise<ReturnType<typeof withFeed> & { plain: World }> {
+  const plain = createWorld(),
+    fed = withFeed(plain, { ...plain.flags, refusesStaleWrites: false });
+  await fed.world.autopilot.start({ id: ROLLOUT_ID, now: fed.world.now, plan: fed.world.plan });
+  await runFor(fed.world, WELL_PAST_A_STEP);
+  return { ...fed, plain };
+}
+
+describe("a released rollout during an incident", () => {
+  it("doesn't put back a release a stalled worker wrote over until the incident clears", async () => {
+    expect.hasAssertions();
+    const { feed, plain, world } = await releasedOnLooseProvider();
+    feed.incidents = [OUTAGE];
+    plain.flags.setByHand(FLAG_KEY, measuredStep(SECOND_SHARE));
+    await runFor(world, 1);
+    expect(treatmentShare(world)).toBe(SECOND_SHARE);
+    feed.incidents = [];
+    await runFor(world, 1);
+    await expect(recordOf(world)).resolves.toMatchObject({ phase: "released", settled: false });
+    expect(treatmentShare(world)).toBe(EVERYBODY.treatment);
   });
 });

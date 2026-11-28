@@ -91,7 +91,6 @@ describe("the agent's rollout tools, planning for metrics that are slow or thin"
 
 describe("the agent's rollout tools, on the flag's own traffic", () => {
   const QUIET = 600,
-    BUSY = 30_000,
     QUIET_FIRST_STEP_MS = 3_000_000;
 
   it("sizes the steps to the traffic the source measured, and says how long the rollout should take", async () => {
@@ -102,6 +101,23 @@ describe("the agent's rollout tools, on the flag's own traffic", () => {
     expect(answer).toMatchObject({ forecast: { problems: [], unitsPerHour: QUIET }, message: "The rollout has started. At about 600 new units an hour, it should take about 62 minutes.", ok: true });
     await expect(recordOf(world)).resolves.toMatchObject({ plan: { steps: [{ minDurationMs: QUIET_FIRST_STEP_MS }, {}] } });
   });
+
+  it("answers a start sent again as started, sized as the first was, however the traffic has moved since", async () => {
+    expect.hasAssertions();
+    const world = createWorld(),
+      tool = rolloutTools(world.autopilot).rollout_start;
+    world.metrics.setTraffic(QUIET);
+    await tool.run(START_INPUT, call(world, "call-1"));
+    world.metrics.setTraffic(QUIET * 2);
+    await expect(tool.run(START_INPUT, call(world, "call-1"))).resolves.toMatchObject({ ok: true, rollout: { id: "rollout-1" } });
+    await expect(tool.run({ ...START_INPUT, risk: "medium" }, call(world, "call-2"))).resolves.toMatchObject({ message: "A rollout with this id already exists, with a different plan.", ok: false });
+    await expect(recordOf(world)).resolves.toMatchObject({ plan: { steps: [{ minDurationMs: QUIET_FIRST_STEP_MS }, {}], unitsPerHour: QUIET } });
+  });
+
+});
+
+describe("the agent's rollout tools, on a flag with no traffic", () => {
+  const BUSY = 30_000;
 
   it("refuses to start on a flag nobody evaluates, and writes nothing", async () => {
     expect.hasAssertions();

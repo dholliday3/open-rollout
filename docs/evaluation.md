@@ -38,9 +38,11 @@ people edit the flag and send commands.
 | No people at the console; a person says yes | Every rollout ends |
 | People at the console, no revision checks, clocks apart | Every rollout ends once people stop and say yes |
 | Incidents come and go (added 2026-11-27) | The safety promises, and no write raises exposure after its worker read an open incident |
+| Incidents come and go, on a provider that does not check revisions | The same, where a release is put back after a stalled worker's late write |
 | Incidents come and go, no people at the console; a person says yes | Every rollout ends |
 
-No safety promise broke. The incident check was seen to fail, as it should, with the hold switched off. One run hit the known stale-write limit: on a provider that can't refuse stale
+No safety promise broke. The incident check was seen to fail, as it should, with the hold switched off.
+The three incident configurations ran 2,000 seeds each on 2026-11-27. One run hit the known stale-write limit: on a provider that can't refuse stale
 writes, a worker stalled 18 minutes inside a write landed an old step 3 seconds after its rollback settled
 ([limits.md](limits.md)).
 

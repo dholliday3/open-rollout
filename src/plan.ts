@@ -1,6 +1,6 @@
 import { HALF_SHARE } from "./allocation.js";
 import type { MetricKind } from "./stats.js";
-import { duration } from "./traffic.js";
+import { duration } from "./duration.js";
 
 /** Which way a metric gets worse. */
 type Direction = "lower_is_better" | "higher_is_better";
@@ -79,6 +79,11 @@ interface Limits {
 
 interface RolloutPlan {
   readonly flagKey: string;
+  /**
+   * The traffic the steps were sized for, units an hour, when `standardPlan({ unitsPerHour })` sized them. A
+   * note of how the plan was made, so a start that is sent again can make the same plan.
+   */
+  readonly unitsPerHour?: number;
   readonly steps: readonly Step[];
   readonly guardrails: readonly Guardrail[];
   readonly requiresApprovalToRelease: boolean;
@@ -269,8 +274,9 @@ function samePlan(left: RolloutPlan, right: RolloutPlan): boolean {
 
 /** Everything wrong with a plan, in words a person can fix; empty when it can run. */
 function planProblems(plan: RolloutPlan): string[] {
-  const named = plan.flagKey === "" ? ["A plan names its flag."] : [];
-  return [...named, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...lagProblems(plan), ...expiryProblems(plan), ...policyProblems(plan)];
+  const named = plan.flagKey === "" ? ["A plan names its flag."] : [],
+    sized = plan.unitsPerHour === undefined || isAmount(plan.unitsPerHour, Number.MIN_VALUE) ? named : [...named, "The traffic a plan was sized for is some units an hour."];
+  return [...sized, ...stepsProblems(plan.steps), ...guardrailProblems(plan.guardrails), ...limitProblems(plan.limits), ...lagProblems(plan), ...expiryProblems(plan), ...policyProblems(plan)];
 }
 
 export type { Direction, Guardrail, Limits, RolloutPlan, Step };

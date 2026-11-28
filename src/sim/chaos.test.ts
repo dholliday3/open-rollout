@@ -122,6 +122,11 @@ describe("a chaotic runtime, checked against the truth", () => {
     expect.hasAssertions();
     await expect(all({ ...BASE, incidents: true }, safetyOnly)).resolves.toStrictEqual([]);
   });
+
+  it("does the same with incidents on a provider that does not check revisions, where a release is put back after a late write", async () => {
+    expect.hasAssertions();
+    await expect(all({ ...BASE, checksRevision: false, incidents: true }, safetyOnly)).resolves.toStrictEqual([]);
+  });
 });
 
 describe("a chaotic runtime, once it calms down", () => {

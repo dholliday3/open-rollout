@@ -104,8 +104,8 @@ function owe(record: RolloutRecord, observation: Observation, time: Time): Decis
   const { flag } = observation,
     nothing = { record, write: null };
   if (record.phase === "released" && !record.settled && isLateWrite(record, observation)) {
-    // A stalled worker's old step, written back over the release.
-    return attempted(record, flag, { allocation: record.desired, now: time.now });
+    // A stalled worker's old step, written back over the release; putting the release back raises exposure, so it waits out an incident.
+    return holdOf(record, observation) === null ? attempted(record, flag, { allocation: record.desired, now: time.now }) : nothing;
   }
   if (record.settled || isDone(record)) {
     return nothing;

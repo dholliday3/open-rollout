@@ -56,9 +56,10 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   a path few people reach gathers units slowly. A step needs `minFreshUnits` new units per arm within
   `maxDurationMs`. The standard medium plan needs about 85 new units a minute across the product; below
   that its rollouts pause for too little data. `standardPlan({ unitsPerHour })` stretches each step to
-  the time its units take to arrive, `forecast` says how long that comes to, `rollout_start` sizes to the
-  traffic the metric source measures and refuses a flag nobody evaluates, and `planProblems` refuses a step
-  that could wait longer than the rollout's expiry. A path too quiet for that is one to ship without a
+  the time its units take to arrive and keeps its deadline inside the rollout's expiry, `forecast` says how
+  long that comes to and what can't work, `rollout_start` sizes to the traffic the metric source measures
+  and refuses a flag nobody evaluates, and `planProblems` refuses a step whose watch alone outlasts the
+  expiry. A path too quiet for that is one to ship without a
   flag. The traffic is a day's average: a step that falls in a quiet night takes longer.
   `standardPlan({ overrides: { everyStep: { minFreshUnits, minDurationMs } } })` asks for fewer units over
   longer steps. Counting accounts rather than people (`unit: { groupTypeIndex }` on the

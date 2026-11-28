@@ -77,8 +77,10 @@ sequence pointed the other way. For `lower_is_better` the interval's upper end m
   that a change which does nothing is called better on any goal. Each goal gets an equal part of it.
 - The evidence is everything since the rollout began, across its steps, so the goal is usually proven at
   the last step, where the arms are largest. Only the release waits for it; earlier steps don't.
-- A last step that reaches its deadline with a goal unproven ends as `onInsufficientData` says (the
-  standard plans pause) for the reason `unproven`, with both arms' readings in the detail. A resume watches
+- A last step that reaches its deadline with its watch and its units in but a goal unproven (a goal too
+  thin to read included) ends as `onInsufficientData` says (the standard plans pause) for the reason
+  `unproven`, with both arms' readings in the detail. Short of its watch or its units, it is
+  `insufficient_data`. A resume watches
   the step again on the same evidence; a forced release ships it anyway.
 - An approval of the release opens the gate only if every goal is still shown better on that tick.
 
@@ -113,9 +115,10 @@ across the whole product. A unit is counted only once it evaluates the flag, so 
 traffic on the path behind the flag, not the product's.
 
 `forecast(plan, unitsPerHour)` gives each step's expected time at that much traffic (its units arrive at
-`unitsPerHour × share` an hour on each arm) and says which step can't gather its units before it gives
-up, or would take longer than the rollout may go without progress. `standardPlan({ unitsPerHour })`
-makes each step at least that long. `MetricSource.traffic` measures it: the PostHog source counts the
+`unitsPerHour × share` an hour on each arm, and are counted once the metrics' `sourceLagMs` has passed)
+and says what `planProblems` refuses and which step can't gather and see its units before it gives up.
+`standardPlan({ unitsPerHour })` makes each step at least that long, keeps each step's deadline inside the
+rollout's expiry, and notes the traffic on the plan. `MetricSource.traffic` measures it: the PostHog source counts the
 units that sent `$feature_flag_called` for the flag over the last day, whatever it served them, so it can
 be measured before the rollout starts, once the code that checks the flag is deployed. Otherwise lower
 `minFreshUnits`, lengthen the steps (`standardPlan`'s `overrides.everyStep` does both), start at a larger

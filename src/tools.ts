@@ -1,12 +1,12 @@
 import type { Autopilot, CommandOutcome } from "./controller.js";
 import type { Guardrail, RolloutPlan } from "./plan.js";
 import { approveShape, forecastShape, notedShape, startShape, targetShape } from "./tool-shapes.js";
-import { duration, forecast } from "./traffic.js";
 import type { Command } from "./commands.js";
 import type { Forecast } from "./traffic.js";
 import type { RolloutSummary } from "./summary.js";
+import { duration } from "./duration.js";
+import { forecast } from "./traffic.js";
 import type { guardrailShape } from "./tool-shapes.js";
-import { planProblems } from "./plan.js";
 import { standardPlan } from "./standard-plan.js";
 import { summarize } from "./summary.js";
 import type { z } from "zod";
@@ -71,10 +71,27 @@ function guardrailOf({ mustImproveBy, mustRuleOut, ...guardrail }: z.infer<typeo
   return { ...guardrail, ...(mustRuleOut === undefined ? {} : { mustRuleOut }), ...(mustImproveBy === undefined ? {} : { mustImproveBy }) };
 }
 
-/** The standard plan the input asks for, sized to the traffic the agent gave or the source measured, and how long it takes on it. */
-async function planned(autopilot: Autopilot, input: z.infer<typeof forecastShape>): Promise<{ plan: RolloutPlan; outlook: Forecast | null }> {
+/**
+ * The traffic to size a plan to: what the agent gave; for a start sent again, what the rollout it started was
+ * sized to, so the same input makes the same plan however the traffic has moved since; or else what the
+ * metric source measures now. Null when none of them says.
+ */
+async function trafficFor(autopilot: Autopilot, input: z.infer<typeof forecastShape>, id: string | null): Promise<number | null> {
+  if (input.unitsPerHour !== undefined || input.guardrails.length === 0) {
+    return input.unitsPerHour ?? null;
+  }
+  const started = id === null ? null : await autopilot.inspect(id);
+  if (started !== null) {
+    return started.record.plan.unitsPerHour ?? null;
+  }
+  const measured = await autopilot.traffic(input.flagKey);
+  return measured;
+}
+
+/** The standard plan the input asks for, sized to its traffic, and how long it takes on it. */
+async function planned(autopilot: Autopilot, input: z.infer<typeof forecastShape>, id: string | null): Promise<{ plan: RolloutPlan; outlook: Forecast | null }> {
   const guardrails = input.guardrails.map((guardrail) => guardrailOf(guardrail)),
-    unitsPerHour = input.unitsPerHour ?? (guardrails.length === 0 ? null : await autopilot.traffic(input.flagKey)),
+    unitsPerHour = await trafficFor(autopilot, input, id),
     plan = standardPlan({ flagKey: input.flagKey, guardrails, overrides: input.overrides, risk: input.risk, sourceLagMs: input.sourceLagMs, unitsPerHour: unitsPerHour ?? undefined });
   return { outlook: unitsPerHour === null ? null : forecast(plan, unitsPerHour), plan };
 }
@@ -84,7 +101,7 @@ function outlookOf(outlook: Forecast): string {
 }
 
 async function begin(autopilot: Autopilot, input: z.infer<typeof startShape>, call: ToolCall): Promise<ToolAnswer> {
-  const { outlook, plan } = await planned(autopilot, input);
+  const { outlook, plan } = await planned(autopilot, input, input.id);
   if (outlook !== null && outlook.problems.length > 0) {
     return { forecast: outlook, message: outlook.problems.join(" "), ok: false, rollout: null };
   }
@@ -96,11 +113,11 @@ async function begin(autopilot: Autopilot, input: z.infer<typeof startShape>, ca
 }
 
 async function foresee(autopilot: Autopilot, input: z.infer<typeof forecastShape>): Promise<ToolAnswer> {
-  const { outlook, plan } = await planned(autopilot, input),
-    problems = [...planProblems(plan), ...(outlook?.problems ?? [])];
+  const { outlook } = await planned(autopilot, input, null);
   if (outlook === null) {
     return { message: "The metric source can't say how much traffic this flag gets. Give unitsPerHour.", ok: false, rollout: null };
   }
+  const { problems } = outlook;
   return { forecast: outlook, message: problems.length === 0 ? outlookOf(outlook) : problems.join(" "), ok: problems.length === 0, rollout: null };
 }
 

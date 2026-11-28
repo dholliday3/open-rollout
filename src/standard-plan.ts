@@ -71,20 +71,31 @@ function overridden<Shape extends object>(base: Shape, changes: Overrides<Shape>
   return { ...base, ...Object.fromEntries(set) };
 }
 
+/** Traffic a step can be sized to: some units an hour. Anything else leaves the ladder as it is. */
+function isTraffic(unitsPerHour: number | undefined): unitsPerHour is number {
+  return unitsPerHour !== undefined && unitsPerHour > 0 && Number.isFinite(unitsPerHour);
+}
+
 /** The rung's own watch, or longer when the traffic takes longer than that to bring the step its units. */
 function watchFor(rung: { share: number; minutes: number }, units: number, unitsPerHour: number | undefined): number {
   const ladder = rung.minutes * MS_PER_MINUTE;
-  if (unitsPerHour === undefined || !(unitsPerHour > 0) || !Number.isFinite(unitsPerHour)) {
-    return ladder;
-  }
-  return Math.max(ladder, Math.ceil(timeForUnits(units, rung.share, unitsPerHour) / MS_PER_MINUTE) * MS_PER_MINUTE);
+  return isTraffic(unitsPerHour) ? Math.max(ladder, Math.ceil(timeForUnits(units, rung.share, unitsPerHour) / MS_PER_MINUTE) * MS_PER_MINUTE) : ladder;
 }
 
-function ladderStep(rung: { share: number; minutes: number }, sizing: { lag: number; unitsPerHour: number | undefined }, every: Overrides<Omit<Step, "treatmentShare">> | undefined): Step {
+interface Sizing {
+  readonly lag: number;
+  readonly unitsPerHour: number | undefined;
+  /** The longest a step may wait and still give up before the rollout expires for making no progress. */
+  readonly longest: number;
+}
+
+function ladderStep(rung: { share: number; minutes: number }, sizing: Sizing, every: Overrides<Omit<Step, "treatmentShare">> | undefined): Step {
   const minFreshUnits = every?.minFreshUnits ?? DEFAULT_FRESH_UNITS,
-    minDurationMs = every?.minDurationMs ?? watchFor(rung, minFreshUnits, sizing.unitsPerHour);
+    minDurationMs = every?.minDurationMs ?? watchFor(rung, minFreshUnits, sizing.unitsPerHour),
+    // Patience past the watch, but never past the expiry: a step the watch alone takes past it is refused by planProblems.
+    patient = Math.max(minDurationMs, Math.min(minDurationMs * PATIENCE + sizing.lag, sizing.longest));
   return {
-    maxDurationMs: every?.maxDurationMs ?? minDurationMs * PATIENCE + sizing.lag,
+    maxDurationMs: every?.maxDurationMs ?? patient,
     minDurationMs,
     minFreshUnits,
     requiresApproval: every?.requiresApproval ?? false,
@@ -99,17 +110,21 @@ function ladderStep(rung: { share: number; minutes: number }, sizing: { lag: num
  */
 function standardPlan(request: PlanRequest): RolloutPlan {
   const lag = request.sourceLagMs ?? 0,
-    { everyStep, limits, ...policies } = request.overrides ?? {},
+    { unitsPerHour } = request,
+    { everyStep, limits: limitChanges, ...policies } = request.overrides ?? {},
+    limits = overridden<Limits>({ ...DEFAULT_LIMITS, maxStalenessMs: DEFAULT_LIMITS.maxStalenessMs + lag, sourceLagMs: lag }, limitChanges),
+    sizing: Sizing = { lag, longest: limits.expireAfterIdleMs - limits.propagationMs - MS_PER_MINUTE, unitsPerHour },
     standard: RolloutPlan = {
       flagKey: request.flagKey,
       guardrails: request.guardrails,
-      limits: overridden<Limits>({ ...DEFAULT_LIMITS, maxStalenessMs: DEFAULT_LIMITS.maxStalenessMs + lag, sourceLagMs: lag }, limits),
+      limits,
       // LaunchDarkly rolls back a step that never gets its sample. Here a quiet night would undo every rollout, so a person is asked instead.
       onInsufficientData: "pause",
       onMetricsOutage: "hold",
       onSampleRatioMismatch: "rollback",
       requiresApprovalToRelease: request.risk === "high",
-      steps: LADDERS[request.risk].map((rung) => ladderStep(rung, { lag, unitsPerHour: request.unitsPerHour }, everyStep)),
+      steps: LADDERS[request.risk].map((rung) => ladderStep(rung, sizing, everyStep)),
+      ...(isTraffic(unitsPerHour) ? { unitsPerHour } : {}),
     };
   return overridden(standard, policies);
 }

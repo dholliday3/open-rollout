@@ -1,4 +1,4 @@
-import { BASE_ERROR_RATE, METRIC, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, startRollout } from "./__tests__/world.js";
+import { BASE_ERROR_RATE, METRIC, ROLLOUT_ID, SECOND_SHARE, createWorld, eventTypes, passMinute, recordOf, runFor, snapshotOf, startRollout } from "./__tests__/world.js";
 import { describe, expect, it, vi } from "vitest";
 import { FULL_SHARE } from "./allocation.js";
 import type { Guardrail } from "./plan.js";
@@ -18,13 +18,23 @@ const FIXED = 0.005,
   WHOLE_ROLLOUT = 40,
   PAST_THE_LAST_DEADLINE = 90,
   INTO_THE_LAST_STEP = 25,
-  GOAL: Guardrail = { direction: "lower_is_better", kind: "rate", metric: METRIC, mustImproveBy: 0, onRegression: "rollback", tolerance: 0 };
+  ERRORS: Guardrail = { direction: "lower_is_better", kind: "rate", metric: METRIC, onRegression: "rollback", tolerance: 0 },
+  GOAL: Guardrail = { ...ERRORS, mustImproveBy: 0 };
 
 async function startedWithGoal(treatmentErrorRate: number, overrides: Parameters<typeof createWorld>[0] = {}): Promise<World> {
   const world = createWorld({ guardrails: [GOAL], onInsufficientData: "pause", ...overrides });
   world.errorRate = { control: BASE_ERROR_RATE, treatment: treatmentErrorRate };
   await startRollout(world);
   return world;
+}
+
+/** A minute of traffic, with a "rare" metric that reads like the errors until the last step is on, and then has too few units to read. */
+function passMinuteThinAtTheEnd(world: World, thin: { sum: number; units: number }): void {
+  passMinute(world);
+  const { metrics } = snapshotOf(world),
+    atTheEnd = world.flags.peek(world.plan.flagKey).allocation.treatment === SECOND_SHARE,
+    rare = atTheEnd ? { control: thin, treatment: thin } : metrics[METRIC];
+  world.metrics.set({ ...snapshotOf(world), metrics: { ...metrics, rare } });
 }
 
 async function summaryOf(world: World): Promise<RolloutSummary> {
@@ -91,5 +101,20 @@ describe("the release gate of a rollout with a goal", () => {
     await runFor(world, 2);
     expect(world.flags.peek(world.plan.flagKey).allocation.treatment).toBe(SECOND_SHARE);
     expect((await recordOf(world)).phase).toBe("awaiting_approval");
+  });
+});
+
+describe("a goal too thin to read", () => {
+  it("ends the last step as unproven, not as too little traffic, when the step had its watch and its units", async () => {
+    expect.hasAssertions();
+    const world = createWorld({ guardrails: [ERRORS, { ...GOAL, metric: "rare" }], onInsufficientData: "pause" }),
+      thin = { sum: 0, units: 5 };
+    await startRollout(world);
+    for (let minute = 0; minute < PAST_THE_LAST_DEADLINE; minute += 1) {
+      passMinuteThinAtTheEnd(world, thin);
+      // eslint-disable-next-line no-await-in-loop -- a tick a minute, as a scheduler would send them
+      await world.autopilot.tick(ROLLOUT_ID, world.now);
+    }
+    await expect(recordOf(world)).resolves.toMatchObject({ pause: { detail: /rare has too little data to read/u, reason: "unproven" } });
   });
 });

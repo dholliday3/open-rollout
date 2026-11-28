@@ -56,10 +56,11 @@ function isReadable(record: RolloutRecord, snapshot: MetricSnapshot): boolean {
   return findings.length === record.plan.guardrails.length && findings.every((finding) => finding.conclusive);
 }
 
-function watch(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): boolean {
+/** True when the step has had its watch and its new units, whatever the guardrails read. */
+function watchedLongEnough(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): boolean {
   const base = record.freshBaseline,
     { now, snapshot } = seen;
-  if (base === null || !isReadable(record, snapshot)) {
+  if (base === null) {
     return false;
   }
   const fresh = Math.min(snapshot.exposed.control - base.control, snapshot.exposed.treatment - base.treatment),
@@ -69,6 +70,19 @@ function watch(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapsh
     onWorkers = now - (record.confirmedAt ?? now),
     watched = Math.min(onSource, onWorkers) - record.plan.limits.propagationMs;
   return watched >= step.minDurationMs && fresh >= step.minFreshUnits;
+}
+
+function watch(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): boolean {
+  return isReadable(record, seen.snapshot) && watchedLongEnough(record, step, seen);
+}
+
+/**
+ * Why a step that ran out of time gives up. Before the release, a step that had its watch and its units but
+ * not every goal shown better (a goal too thin to read included) is `unproven`; anything else is too little data.
+ */
+function whyLate(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): Why<"insufficient_data" | "unproven"> {
+  const unproven = unprovenGoals(record, seen.snapshot);
+  return unproven.length > 0 && watchedLongEnough(record, step, seen) ? unprovenWhy(record, seen.snapshot, unproven) : TOO_LITTLE;
 }
 
 /** A step whose watch is over goes on to the next gate, unless a goal not yet shown better keeps the release waiting. */
@@ -102,7 +116,7 @@ function progress(record: RolloutRecord, observation: Observation, time: Time): 
   }
   const based = withBaseline(record, snapshot),
     seen = { now: time.now, snapshot };
-  return watch(based, step, seen) ? passOrWait(based, step, seen) : giveUpIfLate(based, step, { now: time.now, why: TOO_LITTLE });
+  return watch(based, step, seen) ? passOrWait(based, step, seen) : giveUpIfLate(based, step, { now: time.now, why: whyLate(based, step, seen) });
 }
 
 /**

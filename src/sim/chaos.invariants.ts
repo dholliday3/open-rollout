@@ -166,15 +166,25 @@ function raisedWhilePaused(chaos: Chaos): string[] {
   return problems;
 }
 
-/** Nothing the library sends raises exposure when its worker's read of the incident feed answered with an open incident, unless a person forced a release. */
+/**
+ * With an incident feed, nothing the library sends raises exposure unless its worker read the feed and it
+ * answered all-clear, or a person forced a release. A worker that raised without reading it is caught too.
+ */
 function raisedDuringIncident(chaos: Chaos): string[] {
   const changes = chaos.bench.provider.changes(FLAG_KEY);
+  if (chaos.bench.incidents === undefined) {
+    return [];
+  }
   return changes.flatMap((change, index) => {
-    const previous = changes.at(Math.max(0, index - 1)) ?? change;
-    if (isPerson(change) || change.allocation.treatment <= previous.allocation.treatment || chaos.bench.incidentSeen.get(change.by) !== true || forced(chaos, change.at)) {
+    const previous = changes.at(Math.max(0, index - 1)) ?? change,
+      // What the flag served when the write went on the wire: a write that lowered it then and lands late, on a provider that can't refuse it, is the known stale-write limit.
+      whenSent = lastWhere(changes, (earlier) => earlier.at <= (chaos.wired.get(change.by) ?? change.at) && earlier !== change) ?? previous,
+      raised = change.allocation.treatment > previous.allocation.treatment && change.allocation.treatment > whenSent.allocation.treatment,
+      seen = chaos.bench.incidentSeen.get(change.by);
+    if (isPerson(change) || !raised || seen === false || forced(chaos, change.at)) {
       return [];
     }
-    return [`hold: ${change.by} raised the flag from ${previous.allocation.treatment} to ${change.allocation.treatment} after reading an open incident`];
+    return [`hold: ${change.by} raised the flag from ${previous.allocation.treatment} to ${change.allocation.treatment} ${seen === true ? "after reading an open incident" : "without reading the incident feed"}`];
   });
 }
 
