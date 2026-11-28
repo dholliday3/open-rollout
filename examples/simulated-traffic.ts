@@ -53,6 +53,27 @@ function knownBy(minutes: readonly Minute[], watermark: number): ArmPair<ArmTota
   return known;
 }
 
+/** What the metrics say at `now`: each metric's totals as far as the data has caught up. */
+function snapshotOf(minutes: readonly Minute[], names: readonly string[], at: { now: number; lagMs: number }): MetricSnapshot {
+  const watermark = at.now - at.lagMs,
+    known = knownBy(minutes, watermark);
+  return {
+    asOf: at.now,
+    contaminated: 0,
+    exposed: { control: known.control.people, treatment: known.treatment.people },
+    metrics: Object.fromEntries(
+      names.map((name) => [
+        name,
+        {
+          control: { sum: known.control.events[name] ?? 0, units: known.control.people },
+          treatment: { sum: known.treatment.events[name] ?? 0, units: known.treatment.people },
+        },
+      ]),
+    ),
+    watermark,
+  };
+}
+
 function simulatedTraffic(options: TrafficOptions): SimulatedTraffic {
   const peoplePerMinute = options.peoplePerMinute ?? DEFAULT_PEOPLE_PER_MINUTE,
     rates: Record<string, ArmPair<number>> = { ...options.rates, [options.metric]: options.errorRate },
@@ -63,25 +84,7 @@ function simulatedTraffic(options: TrafficOptions): SimulatedTraffic {
     events: Object.fromEntries(Object.entries(rates).map(([name, rate]) => [name, (totals[side].events[name] ?? 0) + Math.round(people * rate[side])])),
     people: totals[side].people + people,
   });
-  const snapshot = (): MetricSnapshot => {
-    const watermark = now - (options.lagMs ?? 0),
-      known = knownBy(minutes, watermark);
-    return {
-      asOf: now,
-      contaminated: 0,
-      exposed: { control: known.control.people, treatment: known.treatment.people },
-      metrics: Object.fromEntries(
-        Object.keys(rates).map((name) => [
-          name,
-          {
-            control: { sum: known.control.events[name] ?? 0, units: known.control.people },
-            treatment: { sum: known.treatment.events[name] ?? 0, units: known.treatment.people },
-          },
-        ]),
-      ),
-      watermark,
-    };
-  };
+  const snapshot = (): MetricSnapshot => snapshotOf(minutes, Object.keys(rates), { lagMs: options.lagMs ?? 0, now });
   return {
     now: () => now,
     passMinute: () => {
@@ -96,6 +99,11 @@ function simulatedTraffic(options: TrafficOptions): SimulatedTraffic {
     snapshot: async () => {
       await Promise.resolve();
       return snapshot();
+    },
+    // Every person here is new and reaches the flag.
+    traffic: async () => {
+      await Promise.resolve();
+      return peoplePerMinute * 60;
     },
   };
 }

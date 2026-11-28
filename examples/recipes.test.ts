@@ -1,8 +1,8 @@
 import type { ArmPair, Autopilot, RolloutPlan, RolloutRecord } from "open-rollout";
+import { BUG_FLAG, billingEngine, bugFix, checkoutPlan, datadogHold, lagProblems, onboardingPlan, searchPlan, serviceRewrite, slackTools, tableFlags, unprepared } from "./recipes.js";
 import type { FlagRow, PostHogConnection } from "./recipes.js";
-import { billingEngine, checkoutPlan, lagProblems, searchPlan, serviceRewrite, slackTools, tableFlags, unprepared } from "./recipes.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAutopilot, createMemoryFlags, createMemoryNotifier, createMemoryStore, planProblems } from "open-rollout";
-import { describe, expect, it, vi } from "vitest";
 import type { PostHogCall } from "open-rollout/posthog";
 // eslint-disable-next-line import/no-nodejs-modules -- the README is read from disk so its sample output can't drift from these recipes
 import { readFile } from "node:fs/promises";
@@ -172,5 +172,71 @@ describe("recipe: flags in your own Postgres table", () => {
     await expect(flags.write("search-ranking-v2", { control: 1000, treatment: 1000 }, revision)).resolves.toBe(8);
     await expect(flags.write("search-ranking-v2", { control: 0, treatment: 0 }, revision)).rejects.toThrow("No row.");
     await expect(flags.read("search-ranking-v2")).resolves.toStrictEqual({ allocation: { control: 1000, treatment: 1000 }, revision: 8 });
+  });
+});
+
+/** The bug-fix recipe against the quickstart's traffic: the plan it picks from the flag's traffic, then a tick a minute. */
+async function fixRun(rates: ArmPair<number>, peoplePerMinute = 1000): Promise<{ plan: RolloutPlan | null; events: readonly string[]; record: RolloutRecord | null }> {
+  const flags = createMemoryFlags(),
+    notifier = createMemoryNotifier(),
+    store = createMemoryStore(),
+    simulated = simulatedTraffic({ errorRate: NO_DIFFERENCE, flagKey: BUG_FLAG, flags, metric: "errors", peoplePerMinute, rates: { double_charged: rates } }),
+    autopilot = createAutopilot({ flags, metrics: simulated, notifier, store }),
+    plan = await bugFix(autopilot);
+  if (plan === null) {
+    return { events: [], plan, record: null };
+  }
+  await autopilot.start({ id: ROLLOUT_ID, now: simulated.now(), plan });
+  for (let minute = 0; minute < THREE_HOURS; minute += 1) {
+    simulated.passMinute();
+    await autopilot.tickAll(simulated.now());
+  }
+  return { events: notifier.events.map((event) => event.type), plan, record: (await store.load(ROLLOUT_ID))?.record ?? null };
+}
+
+describe("recipe: a bug fix that must be shown to work", () => {
+  it("releases a fix once double charges are shown rarer on it", async () => {
+    expect.hasAssertions();
+    const run = await fixRun({ control: 0.05, treatment: 0 });
+    expect(run.events.at(-1)).toBe("released");
+  });
+
+  it("stops at the last step, as unproven, a change that left double charges as they were", async () => {
+    expect.hasAssertions();
+    const run = await fixRun({ control: 0.05, treatment: 0.05 });
+    expect(run.record).toMatchObject({ pause: { reason: "unproven" }, phase: "paused" });
+  });
+
+  it("answers no plan on a path too quiet to flag, so the fix ships without one", async () => {
+    expect.hasAssertions();
+    await expect(fixRun({ control: 0.05, treatment: 0 }, 0.01)).resolves.toMatchObject({ plan: null });
+  });
+});
+
+describe("recipe: a mobile app whose phones keep a copy of the flag", () => {
+  it("watches each step half an hour longer, for phones to pick it up, and rolls back a build that crashes", async () => {
+    expect.hasAssertions();
+    expect(planProblems(onboardingPlan)).toStrictEqual([]);
+    expect(onboardingPlan.limits.propagationMs).toBe(30 * MINUTE);
+    const run = await rollOut({ ...onboardingPlan, flagKey: "new-checkout" }, THREE_HOURS, { rates: { crashed: { control: 0.01, treatment: 0.2 } } });
+    expect(run.record).toMatchObject({ outcome: { finding: { metric: "crashed" }, reason: "regression" }, phase: "rolled_back" });
+  });
+});
+
+describe("recipe: hold every rollout while a Datadog monitor alerts", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("asks Datadog for the tagged monitors with both keys, and reports the one in alert", async () => {
+    expect.hasAssertions();
+    const fetched: { url: string; headers: unknown }[] = [];
+    vi.stubGlobal("fetch", async (url: URL, init: { headers: unknown }) => {
+      await Promise.resolve();
+      fetched.push({ headers: init.headers, url: url.toString() });
+      return Response.json([{ id: 9, name: "Payments 5xx", overall_state: "Alert", tags: ["open-rollout:hold"] }]);
+    });
+    await expect(datadogHold({ api: "api-key", app: "app-key" }).open()).resolves.toStrictEqual([{ id: "datadog-monitor-9", title: "Payments 5xx" }]);
+    expect(fetched).toStrictEqual([{ headers: { "DD-API-KEY": "api-key", "DD-APPLICATION-KEY": "app-key" }, url: "https://api.datadoghq.com/api/v1/monitor?monitor_tags=open-rollout%3Ahold&page=0&page_size=1000" }]);
   });
 });

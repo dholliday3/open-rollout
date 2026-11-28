@@ -45,7 +45,8 @@ function duration(ms: number): string {
     return "forever";
   }
   if (ms < FEW_HOURS * MS_PER_HOUR) {
-    return `${Math.ceil(ms / MS_PER_MINUTE)} minutes`;
+    const whole = Math.ceil(ms / MS_PER_MINUTE);
+    return whole === 1 ? "1 minute" : `${whole} minutes`;
   }
   return ms < FEW_DAYS * MS_PER_DAY ? `${(ms / MS_PER_HOUR).toFixed(1)} hours` : `${(ms / MS_PER_DAY).toFixed(1)} days`;
 }
@@ -68,11 +69,13 @@ function stepForecast(plan: RolloutPlan, index: number, unitsPerHour: number): S
 }
 
 function problemOf(plan: RolloutPlan, expected: StepForecast, index: number): string[] {
-  if (expected.finishes) {
-    return [];
+  const name = `Step ${index + 1} (${expected.treatmentShare / PERCENT_PER_SHARE}% an arm)`,
+    { expireAfterIdleMs } = plan.limits;
+  if (!expected.finishes) {
+    return [`${name} needs about ${duration(expected.unitsMs)} to give each arm ${plan.steps[index].minFreshUnits} new units, but gives up after ${duration(expected.deadlineMs)}.`];
   }
-  const { minFreshUnits } = plan.steps[index];
-  return [`Step ${index + 1} (${expected.treatmentShare / PERCENT_PER_SHARE}% an arm) needs about ${duration(expected.unitsMs)} to give each arm ${minFreshUnits} new units, but gives up after ${duration(expected.deadlineMs)}.`];
+  // A step that takes longer than the rollout may go without progress is undone before it can pass.
+  return expected.expectedMs < expireAfterIdleMs ? [] : [`${name} should take about ${duration(expected.expectedMs)}, longer than a rollout may go without progress (${duration(expireAfterIdleMs)}). The path is too quiet to flag: ship the change without one.`];
 }
 
 /**

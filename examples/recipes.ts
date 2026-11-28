@@ -1,14 +1,16 @@
-import type { Autopilot, FlagControl, Guardrail, MetricSource, RolloutPlan } from "open-rollout";
+import type { Autopilot, FlagControl, Guardrail, IncidentFeed, MetricSource, RolloutPlan } from "open-rollout";
 import type { MetricDefinition, PostHogMetricsOptions } from "open-rollout/posthog";
-import { planProblems, standardPlan } from "open-rollout";
+import { forecast, planProblems, standardPlan } from "open-rollout";
 import type { RolloutTools } from "open-rollout/tools";
+import { createDatadogIncidents } from "open-rollout/datadog";
 import { createPostHogMetrics } from "open-rollout/posthog";
 import { rolloutTools } from "open-rollout/tools";
 
 /** Where PostHog is and how far behind it runs, as `examples/posthog.ts` sets them up. */
 type PostHogConnection = Pick<PostHogMetricsOptions, "ingestionLagMs" | "now" | "projectId" | "transport">;
 
-const HOUR = 60 * 60_000;
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 function billingEngine(postHog: PostHogConnection): { metrics: MetricSource; plan: RolloutPlan } {
@@ -123,5 +125,47 @@ function tableFlags(queryRow: QueryRow): FlagControl {
   };
 }
 
+const BUG_FLAG = "fix-double-charge";
+
+async function bugFix(autopilot: Autopilot): Promise<RolloutPlan | null> {
+  const unitsPerHour = await autopilot.traffic(BUG_FLAG);
+  const plan = standardPlan({
+    flagKey: BUG_FLAG,
+    risk: "low",
+    guardrails: [
+      { metric: "double_charged", kind: "rate", direction: "lower_is_better", tolerance: 0,
+        mustImproveBy: 0, onRegression: "rollback" },
+      { metric: "errors", kind: "rate", direction: "lower_is_better", tolerance: 0,
+        onRegression: "rollback" },
+    ],
+    unitsPerHour: unitsPerHour ?? undefined,
+  });
+  const tooQuiet = unitsPerHour === null || forecast(plan, unitsPerHour).problems.length > 0;
+  return tooQuiet ? null : plan;
+}
+
+const onboardingPlan = standardPlan({
+  flagKey: "onboarding-v3-ios",
+  risk: "medium",
+  guardrails: [
+    { metric: "crashed", kind: "rate", direction: "lower_is_better", tolerance: 0,
+      onRegression: "rollback" },
+  ],
+  overrides: { limits: { propagationMs: 30 * MINUTE } },
+});
+
+function datadogHold(keys: { api: string; app: string }): IncidentFeed {
+  return createDatadogIncidents({
+    monitorTags: ["open-rollout:hold"],
+    transport: async (call) => {
+      const response = await fetch(new URL(call.path, "https://api.datadoghq.com"), {
+        headers: { "DD-API-KEY": keys.api, "DD-APPLICATION-KEY": keys.app },
+        signal: AbortSignal.timeout(10_000),
+      });
+      return { status: response.status, body: response.ok ? await response.json() : null };
+    },
+  });
+}
+
 export type { FlagRow, PostHogConnection, QueryRow };
-export { billingEngine, checkoutPlan, lagProblems, searchPlan, serviceRewrite, slackTools, tableFlags, unprepared };
+export { BUG_FLAG, billingEngine, bugFix, checkoutPlan, datadogHold, lagProblems, onboardingPlan, searchPlan, serviceRewrite, slackTools, tableFlags, unprepared };

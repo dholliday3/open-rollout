@@ -70,6 +70,7 @@ describe("a standard plan sized to its traffic", () => {
   it("is refused when a step would wait longer than a rollout may go without progress", () => {
     expect.hasAssertions();
     const sized = standardPlan({ flagKey: "fix", guardrails: ERRORS, risk: "medium", unitsPerHour: DESERTED });
+    expect(forecast(sized, DESERTED).problems[0]).toBe("Step 1 (1% an arm) should take about 41.7 days, longer than a rollout may go without progress (21.0 days). The path is too quiet to flag: ship the change without one.");
     expect(planProblems(sized)[0]).toMatch(/^Step 1 may wait 250\.0 days for its units, longer than a rollout may go without progress \(expireAfterIdleMs, 21\.0 days\)/u);
   });
 

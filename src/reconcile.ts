@@ -6,11 +6,13 @@ import type { FlagReading } from "./ports.js";
 import type { RolloutRecord } from "./record.js";
 import { isStepOf } from "./plan.js";
 
+/** What a rollback has done once the provider serves the flag off: an app holding an older copy, such as a phone, still runs the new behaviour until it next fetches the flag. */
+const ROLLED_BACK = "Rolled back: the flag provider serves the flag off for everybody. An app holding an older copy of the flag, such as a phone, switches when it next fetches it.";
+
 function finish(record: RolloutRecord, now: number): RolloutRecord {
   const undone = record.phase === "rolling_back",
     done: RolloutRecord = { ...record, clock: now, confirmedAt: now, confirmedEpoch: record.epoch, correctingDrift: false, phase: undone ? "rolled_back" : "released" };
-  // The flag has changed; apps holding an older copy of it catch up as they next fetch it.
-  return withEvent(done, { at: now, detail: undone ? "Rolled back: the flag is off for everybody." : "Released: the flag is on for everybody.", type: undone ? "rolled_back" : "released" });
+  return withEvent(done, { at: now, detail: undone ? ROLLED_BACK : "Released: the flag is on for everybody.", type: undone ? "rolled_back" : "released" });
 }
 
 function afterRollback(record: RolloutRecord, actual: Allocation, now: number): RolloutRecord {
