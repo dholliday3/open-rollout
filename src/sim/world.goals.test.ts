@@ -15,14 +15,18 @@ vi.setConfig({ testTimeout: 7_200_000 });
  * Waiting for a goal keeps the last step watched longer, which costs some false alarms (evaluation.md).
  */
 
-const SEVERAL_DOZEN = 60,
+/** Each of these watches its last step to the deadline, so the quick suite runs few; `pnpm sim` runs hundreds. */
+const TWO_DOZEN = 24,
   A_HANDFUL = 6,
-  [NOTHING, ...FIXES] = GOALS;
+  /** Seeds 9 and 11 moved on short of new people before a step's starting count waited for its watermark. */
+  PAST_SEED_ELEVEN = 12,
+  [NOTHING, ...FIXES] = GOALS,
+  CASES = FIXES.map((scenario) => ({ name: scenario.name, runs: runsOr(scenario.name.includes("sized") ? PAST_SEED_ELEVEN : A_HANDFUL), scenario }));
 
 describe("goals: a change that fixes nothing", () => {
   it("is not released as a fix more often than the goals' error budget allows", async () => {
     expect.hasAssertions();
-    const verdict = await judgeScenario(NOTHING, runsOr(SEVERAL_DOZEN)),
+    const verdict = await judgeScenario(NOTHING, runsOr(TWO_DOZEN)),
       released = shareOf(verdict.runs - verdict.notReleased.count, verdict.runs);
     expect(verdict.broken).toStrictEqual([]);
     expect(released.low).toBeLessThanOrEqual(goalAlphaOf(DEFAULT_LIMITS));
@@ -31,9 +35,9 @@ describe("goals: a change that fixes nothing", () => {
 });
 
 describe("goals: a real fix", () => {
-  it.each(FIXES.map((scenario) => ({ name: scenario.name, scenario })))("$name", async ({ scenario }) => {
+  it.each(CASES)("$name", async ({ runs, scenario }) => {
     expect.hasAssertions();
-    const verdict = await judgeScenario(scenario, runsOr(A_HANDFUL));
+    const verdict = await judgeScenario(scenario, runs);
     expect(verdict.broken).toStrictEqual([]);
     expect(verdict.regression.low).toBeLessThanOrEqual(DEFAULT_LIMITS.alpha);
   });

@@ -107,7 +107,7 @@ standard medium plan, in the same simulated production. "Released" means shown t
 | Fixes nothing | 300 | 0.7% (2) | 284 | 14 false regressions |
 | Halves the error | 100 | 100% | 0 | |
 | Halves the error, a small product (25 visits a minute) | 100 | 0% | 0 | 100 paused for too little data |
-| The same, steps sized to its traffic (`unitsPerHour: 388`) | 400 | 27% | 292 | |
+| The same, steps sized to its traffic (`unitsPerHour: 388`) | 400 | 27% | 292 | 1 rolled back for a sample ratio mismatch |
 | Halves an error one request in 10,000 has | 100 | 34% | 66 | |
 
 The budget for releasing a change that fixes nothing is `limits.goalAlpha` = 5%. A small product doesn't
@@ -123,10 +123,24 @@ watching longer costs false alarms on the guardrails. Healthy code, medium plan,
 | A last step watched at least two hours, no goal | 4.7% [2.8, 7.7] |
 | A goal | 4.7% [2.8, 7.7] |
 
-The small product with sized steps also showed the late-exposure gap in [limits.md](limits.md): 8 of 400
-rollouts moved on from a step with 49 truly new people on an arm against 50 asked, so `pnpm sim` fails on
-that scenario. The same plan on the code before this work did the same on the same seeds (4 of the first
-100).
+## Counting a step's new units
+
+The small product with sized steps, whose steps ask for exactly the 50 people an arm its traffic brings,
+found a gap that bigger products hide. A step counted the units it started from in the first snapshot
+taken once it was in force, but that snapshot was complete only up to its watermark, a minute or more
+before. Exposures from the step before that were still on their way arrived later and were counted as
+new: 8 of 400 rollouts moved on from a step with 49 truly new people on an arm against 50 asked. The code
+before goals and traffic sizing did the same on the same seeds.
+
+| The same 400 seeds | Moved on short of new people |
+|---|---|
+| Before the fix | 8 |
+| Before, with no ingestion lag and nothing held back from counting | 0 |
+| After: the units a step starts from are counted once its watermark reaches the step | 0 |
+| After, the source's watermark honest about what is still on its way | 0 |
+| After, the source's watermark claiming every event up to its newest | 1 |
+
+The last row is a source that says its data is complete before it is, which no count can see through.
 
 ## Against a real PostHog project
 

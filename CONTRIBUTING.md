@@ -23,7 +23,7 @@ CI runs the first four on Node 22 and 24. Run them before you push.
 | `pnpm check:package` | Builds and packs the package, installs the tarball into a fresh project (`scripts/package-consumer`), runs it with plain `node` (`import` and `require`), and type-checks a consumer under `nodenext` and `bundler` with TypeScript 5.9 and this repo's, emitting declarations for a store written over the record type, so a type the public API reaches but doesn't export fails it (TS2742). Needs the network |
 | `pnpm build` | Compiles `src` to `dist` (ES modules and `.d.ts`). `pnpm install` runs it, and so does an install from GitHub |
 | `pnpm quickstart` | Runs `examples/quickstart.ts` with tsx |
-| `pnpm sim` | The simulation at full size (`SIM_RUNS=400 SIM_CHAOS_RUNS=1000`). Slow: run it when you change `decide`, the statistics or the controller. It fails on one scenario, the goal on a small product with traffic-sized steps, which reports the late-exposure gap in `docs/limits.md` on 8 of 400 seeds; every other test passes |
+| `pnpm sim` | The simulation at full size (`SIM_RUNS=400 SIM_CHAOS_RUNS=1000`). Slow: run it when you change `decide`, the statistics or the controller |
 | `pnpm live:posthog` | The PostHog adapters against a real project, on flags it makes and deletes. Needs `POSTHOG_HOST`, `POSTHOG_PROJECT_ID` and `POSTHOG_PERSONAL_API_KEY`; skipped by `pnpm test` |
 | `pnpm mutate --mutate <file>` | Stryker mutation testing on one file, such as `pnpm mutate --mutate src/decide.ts`. A whole-package run is slow |
 

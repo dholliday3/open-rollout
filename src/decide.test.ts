@@ -152,7 +152,7 @@ describe("deciding on clocks and counts that disagree", () => {
     const second: RolloutRecord = { ...watching(), freshBaseline: null, unitsFloor: { control: UNITS, treatment: UNITS } },
       emptied = decide(second, { flag: flag(FIRST_SHARE), metrics: healthy(LATER + MINUTE, 0), staleWritesRefused: true }, LATER + MINUTE).record;
     expect(emptied.freshBaseline).toBeNull();
-    expect(decide(emptied, { flag: flag(FIRST_SHARE), metrics: healthy(LATER + MINUTE), staleWritesRefused: true }, LATER + MINUTE).record.freshBaseline).toStrictEqual({ asOf: LATER + MINUTE, control: UNITS, treatment: UNITS });
+    expect(decide(emptied, { flag: flag(FIRST_SHARE), metrics: healthy(LATER + MINUTE), staleWritesRefused: true }, LATER + MINUTE).record.freshBaseline).toStrictEqual({ asOf: LATER + MINUTE, complete: true, control: UNITS, treatment: UNITS });
   });
 });
 
@@ -162,7 +162,7 @@ describe("deciding from readings that are behind", () => {
     const behind = { ...healthy(LATER - STALE_BY * MINUTE + MINUTE, 0), asOf: LATER + MINUTE },
       started = decide(entering(), { flag: flag(FIRST_SHARE), metrics: behind, staleWritesRefused: true }, LATER).record,
       caughtUp = { ...healthy(LATER + MINUTE + TWENTY * MINUTE / 2), asOf: MUCH_LATER };
-    expect(started.freshBaseline).toStrictEqual({ asOf: LATER + MINUTE, control: 0, treatment: 0 });
+    expect(started.freshBaseline).toStrictEqual({ asOf: LATER + MINUTE, complete: false, control: 0, treatment: 0 });
     expect(decide(started, { flag: flag(FIRST_SHARE), metrics: caughtUp, staleWritesRefused: true }, MUCH_LATER - MINUTE).record.stepIndex).toBe(0);
   });
 

@@ -32,7 +32,8 @@ A step moves on only when all of these hold:
    serving the step. No stalled tick, ingestion lag, or one clock being wrong or put right can shorten it.
    It starts again if someone else changes the flag and the rollout has to put it back.
 3. Each arm gained `minFreshUnits` new units during the step, counted from no lower than where the last
-   step ended.
+   step ended, and from the first snapshot whose watermark had reached the step's start: a unit exposed
+   before the step, whose exposure was still on its way, is never counted as new.
 4. The metrics are fresh (`maxStalenessMs`), make sense (no missing metric, negative count, NaN, sum of
    squares that can't go with its total, or watermark after the snapshot was taken), give every guardrail
    a reading, and no guardrail has regressed.

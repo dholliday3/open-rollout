@@ -71,12 +71,13 @@ Where the guarantees in [guarantees.md](guarantees.md) stop, what is not verifie
   seen an hour after it starts. `standardPlan({ sourceLagMs })` gives the staleness limit and every step's
   deadline that much more room, and `planProblems` refuses a plan whose `limits.sourceLagMs` leaves a step
   no time. A plan that doesn't know about the lag reads hour-old metrics as stale: it holds where it is and
-  reports `metrics_outage`. Units the previous step exposed in its last `sourceLagMs` count toward the next
-  step's `minFreshUnits`, because the next step's count starts from data that is that far behind. The same
-  happens to any exposure that arrives after the source's watermark said the data was complete: it counts
-  as new in the step that sees it. On a small simulated product whose steps were sized to gather exactly
-  50 people an arm, 8 of 400 rollouts moved on from a step with 49 truly new people on one arm; on the
-  same steps before goals and traffic sizing existed, the same seeds did the same.
+  reports `metrics_outage`. A step counts the units it starts from only once its metrics have caught up
+  with its start, so units exposed in the step before are never taken for new ones; units exposed while
+  the metrics catch up are not counted as new either, so a lagging source asks each step for a little more
+  traffic. What a watermark claims is taken as true: an exposure that arrives after the source said its
+  data was complete still counts as new in the step that sees it. On a simulated source whose watermark
+  claimed everything up to its newest event, 1 of 400 rollouts on a small product moved on from a step
+  with 49 truly new people on an arm against 50 asked.
 
 - **A goal makes the last step wait, and watching longer costs false alarms.** The last step is watched
   until every goal is shown better or its deadline passes. Healthy code on the medium plan was rolled back

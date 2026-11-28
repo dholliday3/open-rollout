@@ -33,21 +33,30 @@ function unprovenWhy(record: RolloutRecord, snapshot: MetricSnapshot, goals: rea
 }
 
 /**
- * Notes where the step's watch begins: the units each arm has, and the source's own time, in the first
- * snapshot taken once the step has been seen in force. A tick reads the flag before it reads the metrics,
- * so that snapshot was taken after the flag served the step, whatever any worker's clock says, however
- * long a tick stalled, and however far behind the metrics were running.
+ * Notes where the step's watch begins: the source's own time in the first snapshot taken once the step has
+ * been seen in force. A tick reads the flag before it reads the metrics, so that snapshot was taken after the
+ * flag served the step, whatever any worker's clock says, however long a tick stalled, and however far
+ * behind the metrics were running.
+ *
+ * The units each arm already has are counted from the first snapshot whose watermark has reached that time.
+ * Counted earlier, they would leave out units exposed just before the step whose exposures were still on
+ * their way, and those would arrive later looking new. Units exposed between the step starting and the
+ * watermark reaching it are not counted as new either, which only ever asks a step for more.
  *
  * A source that shows fewer units than the last step ended with has lost some, and is no place to start
  * counting from.
  */
 function withBaseline(record: RolloutRecord, snapshot: MetricSnapshot): RolloutRecord {
-  const { asOf, exposed } = snapshot,
-    floor = record.unitsFloor;
-  if (record.freshBaseline !== null || exposed.control < floor.control || exposed.treatment < floor.treatment) {
+  const { asOf, exposed, watermark } = snapshot,
+    floor = record.unitsFloor,
+    base = record.freshBaseline;
+  if (exposed.control < floor.control || exposed.treatment < floor.treatment) {
     return record;
   }
-  return { ...record, freshBaseline: { ...exposed, asOf } };
+  if (base === null) {
+    return { ...record, freshBaseline: { ...exposed, asOf, complete: watermark >= asOf } };
+  }
+  return base.complete === false && watermark >= base.asOf ? { ...record, freshBaseline: { ...base, ...exposed, complete: true } } : record;
 }
 
 /** True when every guardrail has a reading sharp enough to pass on: a metric too thin to read, or to rule out what it must, has not passed. */
@@ -60,7 +69,7 @@ function isReadable(record: RolloutRecord, snapshot: MetricSnapshot): boolean {
 function watchedLongEnough(record: RolloutRecord, step: Step, seen: { snapshot: MetricSnapshot; now: number }): boolean {
   const base = record.freshBaseline,
     { now, snapshot } = seen;
-  if (base === null) {
+  if (base === null || base.complete === false) {
     return false;
   }
   const fresh = Math.min(snapshot.exposed.control - base.control, snapshot.exposed.treatment - base.treatment),

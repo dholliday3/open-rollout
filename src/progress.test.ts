@@ -13,7 +13,10 @@ const STEP = stepAt(testPlan(), 0),
   PATIENCE_MS = (STEP?.maxDurationMs ?? 0) + DEFAULT_LIMITS.propagationMs,
   ENOUGH = STEP?.minFreshUnits ?? 0,
   WATCHED = START + WATCH_MS,
-  MORE = 3000;
+  MORE = 3000,
+  /** Units each arm had in a snapshot taken as a step began, and once its late exposures had arrived. */
+  BEFORE = 100,
+  LATE = 130;
 
 function seeing(units: { control: number; treatment: number }, watermark = WATCHED, share = FIRST_SHARE): Observation {
   return { flag: flagAt(share), metrics: healthyAt(watermark, units), staleWritesRefused: true };
@@ -90,7 +93,27 @@ describe("where a step's watch begins", () => {
       baselineOf = (control: number, treatment: number): unknown => progress(fresh, seeing({ control, treatment }, START), { now: START, wall: START }).freshBaseline;
     expect(baselineOf(ENOUGH, ENOUGH - 1)).toBeNull();
     expect(baselineOf(ENOUGH - 1, ENOUGH)).toBeNull();
-    expect(baselineOf(ENOUGH, ENOUGH)).toStrictEqual({ asOf: START, control: ENOUGH, treatment: ENOUGH });
+    expect(baselineOf(ENOUGH, ENOUGH)).toStrictEqual({ asOf: START, complete: true, control: ENOUGH, treatment: ENOUGH });
+  });
+
+  it("counts the units a step starts from only once the metrics have caught up with the step, so the last step's late ones are not new", () => {
+    expect.hasAssertions();
+    const fresh: RolloutRecord = { ...watchingStep(), freshBaseline: null },
+      // Taken once the step is in force, but complete only up to a minute before: exposures from the step before are still on their way.
+      behind = { ...healthyAt(START - MINUTE, { control: BEFORE, treatment: BEFORE }), asOf: START },
+      started = progress(fresh, { ...seeing({ control: BEFORE, treatment: BEFORE }), metrics: behind }, { now: START, wall: START }),
+      stillBehind = progress(started, { ...seeing({ control: LATE, treatment: LATE }), metrics: { ...behind, exposed: { control: LATE, treatment: LATE }, watermark: START - 1 } }, { now: START, wall: START }),
+      caughtUp = progress(stillBehind, seeing({ control: LATE, treatment: LATE }, START), { now: START, wall: START });
+    expect(started.freshBaseline).toStrictEqual({ asOf: START, complete: false, control: BEFORE, treatment: BEFORE });
+    expect(stillBehind.freshBaseline).toStrictEqual(started.freshBaseline);
+    expect(caughtUp.freshBaseline).toStrictEqual({ asOf: START, complete: true, control: LATE, treatment: LATE });
+  });
+
+  it("passes no step while the units it starts from are not counted yet, however much time and traffic have gone by", () => {
+    expect.hasAssertions();
+    const waiting: RolloutRecord = { ...watchingStep(), freshBaseline: { asOf: START, complete: false, control: 0, treatment: 0 } };
+    expect(stepAfter(waiting, { ...seeing({ control: MORE, treatment: MORE }), metrics: { ...healthyAt(WATCHED, { control: MORE, treatment: MORE }), asOf: WATCHED, watermark: START - 1 } })).toBe(0);
+    expect(stepAfter(waiting, seeing({ control: MORE, treatment: MORE }))).toBe(0);
   });
 
   it("is noted with what the last step ended with when the step passes", () => {

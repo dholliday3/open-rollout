@@ -81,6 +81,13 @@ interface Baseline {
   readonly treatment: number;
   /** When the snapshot was taken, on the metric source's clock, so no worker's clock and no lag can shorten a watch. */
   readonly asOf: number;
+  /**
+   * False while the counts come from data complete only up to before `asOf`: a unit exposed just before the
+   * step, whose exposure hadn't been counted yet, would later look new. They are taken again from the first
+   * snapshot whose watermark has reached `asOf`. A record from before this was kept has none, and its counts
+   * are taken as they are.
+   */
+  readonly complete?: boolean;
 }
 
 /** The last time a tick set out to write the flag. */
